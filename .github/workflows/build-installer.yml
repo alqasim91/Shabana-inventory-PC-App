@@ -15,6 +15,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# softprops/action-gh-release needs contents:write to create the Release and
+# attach the installer. The default GITHUB_TOKEN is read-only otherwise.
+permissions:
+  contents: write
+
 env:
   POSTGRES_VERSION: "18.4.0"
   POSTGREST_VERSION: "v16.0"
