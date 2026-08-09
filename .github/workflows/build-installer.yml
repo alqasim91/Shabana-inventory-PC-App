@@ -1,0 +1,147 @@
+name: Build Windows installer
+
+# Every push to main produces a new downloadable installer as a GitHub
+# Release asset — see BUILD_PLAN.md "Build pipeline". Runs on a real
+# windows-latest runner (not Wine), so Inno Setup compiles natively.
+#
+# Version pins below were verified against each project's actual latest
+# GitHub release at the time this workflow was written (2026-08-09) — see
+# BUILD_PLAN.md changelog note. Bump deliberately, not blindly; re-verify
+# asset filenames against the release page when you do, they change
+# between major versions (e.g. Postgres 18 vs 17 naming).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  POSTGRES_VERSION: "18.4.0"
+  POSTGREST_VERSION: "v16.0"
+  CADDY_VERSION: "2.11.4"
+  GOTRUE_VERSION: "v2.195.0"
+  NSSM_VERSION: "2.24"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout PC-App repo
+        uses: actions/checkout@v4
+        with:
+          path: pc-app
+
+      # The frontend is the SAME application code as the cloud product —
+      # see BUILD_PLAN.md "why not vendor the frontend". Requires a PAT
+      # with read access to the (private) Shabana-Inventory repo, stored
+      # as the FRONTEND_REPO_PAT secret. Not yet configured — see the
+      # summary note delivered alongside this workflow.
+      - name: Checkout frontend source
+        uses: actions/checkout@v4
+        with:
+          repository: alqasim91/Shabana-Inventory
+          token: ${{ secrets.FRONTEND_REPO_PAT }}
+          path: frontend-src
+
+      - name: Set version
+        id: version
+        shell: bash
+        run: echo "version=0.1.0-$(date +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Create payload skeleton
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path pc-app/installer/payload/bin/pg
+          New-Item -ItemType Directory -Force -Path pc-app/installer/payload/bin/postgrest
+          New-Item -ItemType Directory -Force -Path pc-app/installer/payload/bin/gotrue
+          New-Item -ItemType Directory -Force -Path pc-app/installer/payload/bin/caddy
+          New-Item -ItemType Directory -Force -Path pc-app/installer/payload/bin/nssm
+          New-Item -ItemType Directory -Force -Path pc-app/installer/payload/www
+          New-Item -ItemType Directory -Force -Path pc-app/installer/payload/supabase
+          New-Item -ItemType Directory -Force -Path pc-app/installer/payload/installer
+
+      # --- Postgres (theseus-rs/postgresql-binaries — portable msvc build) ---
+      - name: Download Postgres
+        shell: pwsh
+        run: |
+          $url = "https://github.com/theseus-rs/postgresql-binaries/releases/download/${{ env.POSTGRES_VERSION }}/postgresql-${{ env.POSTGRES_VERSION }}-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $url -OutFile pg.zip
+          Expand-Archive -Path pg.zip -DestinationPath pc-app/installer/payload/bin/pg -Force
+
+      # --- PostgREST ---
+      - name: Download PostgREST
+        shell: pwsh
+        run: |
+          $url = "https://github.com/PostgREST/postgrest/releases/download/${{ env.POSTGREST_VERSION }}/postgrest-${{ env.POSTGREST_VERSION }}-windows-x86-64.zip"
+          Invoke-WebRequest -Uri $url -OutFile postgrest.zip
+          Expand-Archive -Path postgrest.zip -DestinationPath pc-app/installer/payload/bin/postgrest -Force
+
+      # --- Caddy ---
+      - name: Download Caddy
+        shell: pwsh
+        run: |
+          $url = "https://github.com/caddyserver/caddy/releases/download/v${{ env.CADDY_VERSION }}/caddy_${{ env.CADDY_VERSION }}_windows_amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile caddy.zip
+          Expand-Archive -Path caddy.zip -DestinationPath pc-app/installer/payload/bin/caddy -Force
+
+      # --- NSSM (service wrapper for PostgREST/GoTrue/Caddy) ---
+      - name: Download NSSM
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-${{ env.NSSM_VERSION }}.zip" -OutFile nssm.zip
+          Expand-Archive -Path nssm.zip -DestinationPath nssm-extracted -Force
+          Copy-Item "nssm-extracted/nssm-${{ env.NSSM_VERSION }}/win64/nssm.exe" pc-app/installer/payload/bin/nssm/nssm.exe
+
+      # --- GoTrue: no official Windows release exists (verified against
+      # the supabase/auth releases API — linux/darwin/arm64 only), so it's
+      # cross-compiled from source. Go handles this natively via GOOS. ---
+      - name: Build GoTrue for Windows
+        shell: bash
+        run: |
+          git clone --depth 1 --branch ${{ env.GOTRUE_VERSION }} https://github.com/supabase/auth.git gotrue-src
+          cd gotrue-src
+          GOOS=windows GOARCH=amd64 go build -o ../pc-app/installer/payload/bin/gotrue/gotrue.exe .
+
+      # --- Frontend: same build the cloud app uses, pointed at a runtime
+      # config file instead of a build-time env var. See BUILD_PLAN.md
+      # "Why not build-time secrets" — this step depends on a small,
+      # not-yet-made change to the frontend's Supabase client bootstrap
+      # (reading window.__RUNTIME_CONFIG__ when present). Will fail until
+      # that lands. ---
+      - name: Build frontend
+        shell: bash
+        run: |
+          cd frontend-src
+          npm ci
+          npm run build
+          cp -r dist/* ../pc-app/installer/payload/www/
+
+      - name: Copy migrations + installer scripts into payload
+        shell: pwsh
+        run: |
+          Copy-Item -Recurse -Force pc-app/supabase/* pc-app/installer/payload/supabase/
+          Copy-Item -Recurse -Force pc-app/installer/scripts pc-app/installer/payload/installer/
+          Copy-Item -Recurse -Force pc-app/installer/config pc-app/installer/payload/installer/
+
+      - name: Compile installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        env:
+          SHABANA_VERSION: ${{ steps.version.outputs.version }}
+        with:
+          path: pc-app/installer/setup.iss
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shabana-installer
+          path: pc-app/installer/Output/*.exe
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          files: pc-app/installer/Output/*.exe
+          body: |
+            Automated build from commit ${{ github.sha }}.
+            Not yet verified on real Windows hardware — see BUILD_PLAN.md
+            "Testing" section before treating this as customer-ready.

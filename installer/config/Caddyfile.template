@@ -1,0 +1,47 @@
+# Generated from this template by provision.ps1 — do not edit the installed
+# copy directly, edit here and re-run provisioning, or your changes are lost
+# on the next upgrade.
+
+{
+	admin off
+}
+
+:{{HTTP_PORT}} {
+	# Static frontend build.
+	root * {{INSTALL_DIR}}\www
+	file_server
+
+	# Runtime config (per-machine anon key + URL) — fetched by the frontend
+	# at startup instead of a build-time env var. See BUILD_PLAN.md, "Why
+	# not build-time secrets."
+	handle /runtime-config.json {
+		root * {{INSTALL_DIR}}\config
+		file_server
+	}
+
+	# First-run admin setup must never be reachable from outside this PC —
+	# an unclaimed admin account behind a public tunnel URL is a race
+	# anyone can win. This block only matters once cloudflared/tunnel mode
+	# is enabled; on local-only installs every request is already loopback.
+	@setup path /setup*
+	handle @setup {
+		@notLocal not remote_ip 127.0.0.1 ::1
+		respond @notLocal "Not available remotely" 403
+		file_server
+	}
+
+	handle /rest/v1/* {
+		uri strip_prefix /rest/v1
+		reverse_proxy 127.0.0.1:{{POSTGREST_PORT}}
+	}
+
+	handle /auth/v1/* {
+		uri strip_prefix /auth/v1
+		reverse_proxy 127.0.0.1:{{GOTRUE_PORT}}
+	}
+
+	# SPA fallback — client-side router handles the rest.
+	handle {
+		try_files {path} /index.html
+	}
+}
