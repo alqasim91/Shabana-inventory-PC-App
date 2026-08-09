@@ -97,14 +97,32 @@ jobs:
           Expand-Archive -Path nssm.zip -DestinationPath nssm-extracted -Force
           Copy-Item "nssm-extracted/nssm-${{ env.NSSM_VERSION }}/win64/nssm.exe" pc-app/installer/payload/bin/nssm/nssm.exe
 
-      # --- GoTrue: no official Windows release exists (verified against
-      # the supabase/auth releases API — linux/darwin/arm64 only), so it's
-      # cross-compiled from source. Go handles this natively via GOOS. ---
+      # --- GoTrue: no official Windows release exists (verified against the
+      # supabase/auth releases API — linux/darwin/arm64 only), AND the source
+      # does not cross-compile to Windows as-is: cmd/serve_cmd.go sets
+      # SO_REUSEPORT via golang.org/x/sys/unix, which has no Windows
+      # equivalent (this is almost certainly WHY there's no Windows build).
+      #
+      # SO_REUSEPORT lets multiple processes share a listening port — a
+      # zero-downtime-restart / multi-instance optimization that a single
+      # Windows service does not need. We neutralize exactly that one line
+      # (serve_cmd.go is the ONLY first-party file importing x/sys/unix,
+      # verified) and drop the now-unused import, then build. The socket is
+      # created without SO_REUSEPORT, which is correct for our single
+      # instance. If a future GoTrue bump moves this, the grep guard below
+      # fails loudly instead of silently shipping a broken binary. ---
       - name: Build GoTrue for Windows
         shell: bash
         run: |
           git clone --depth 1 --branch ${{ env.GOTRUE_VERSION }} https://github.com/supabase/auth.git gotrue-src
           cd gotrue-src
+          # Neutralize the Unix-only SO_REUSEPORT sockopt and drop its import.
+          sed -i 's|serr = unix.SetsockoptInt.*|serr = nil // SO_REUSEPORT unavailable on Windows; not needed for a single instance|' cmd/serve_cmd.go
+          sed -i '\#golang.org/x/sys/unix#d' cmd/serve_cmd.go
+          if grep -q 'unix\.' cmd/serve_cmd.go; then
+            echo "ERROR: x/sys/unix still referenced in serve_cmd.go after patch — GoTrue layout changed, update the patch." >&2
+            exit 1
+          fi
           GOOS=windows GOARCH=amd64 go build -o ../pc-app/installer/payload/bin/gotrue/gotrue.exe .
 
       - name: Setup Node
