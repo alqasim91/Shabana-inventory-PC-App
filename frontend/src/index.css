@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-sand text-ink font-sans antialiased;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  input,
+  select,
+  button,
+  textarea {
+    font-family: inherit;
+  }
+}
+
+/* A4 printable documents (statements, invoices — react-to-print renders this page's DOM as-is). */
+@media print {
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+
+  /* Long ledgers/invoices can span multiple physical pages — keep rows whole
+     and repeat the header row rather than splitting a row across a page break. */
+  table {
+    page-break-inside: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

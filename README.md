@@ -9,8 +9,14 @@ Same application code as
 [alqasim91/Shabana-Inventory](https://github.com/alqasim91/Shabana-Inventory)
 (cloud/Vercel/Supabase edition) — different deployment target.
 
+See [OPUS-HANDOFF.md](OPUS-HANDOFF.md) for the security-critical pieces left
+to build/review (the single-tenant first-run bootstrap and three flagged
+scripts).
+
 ## Layout
 
+- `frontend/` — vendored read-only copy of the cloud app's source, owned by
+  this repo (re-synced manually; see BUILD_PLAN.md)
 - `installer/setup.iss` — Inno Setup script
 - `installer/scripts/` — PowerShell: provisioning, secrets, backup,
   restore, admin reset, migrations, service registration

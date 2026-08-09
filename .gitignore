@@ -1,0 +1,26 @@
+# --- Frontend (vendored from Shabana-Inventory) ---
+frontend/node_modules
+frontend/dist
+frontend/dist-ssr
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+.env.local
+.env*.local
+*.local
+*.log
+.DS_Store
+
+# --- Installer build artifacts ---
+# Vendored binaries are downloaded fresh by CI, never committed. The staged
+# payload and compiled installer are build output.
+installer/payload/
+installer/Output/
+
+# --- Generated secrets — must NEVER be committed (BUILD_PLAN.md item #1) ---
+# These only ever exist on a customer's machine, but guard against an
+# accidental local test run landing them in git.
+**/config/*.key
+**/config/Caddyfile
+**/config/gotrue.env
+**/config/postgrest.conf

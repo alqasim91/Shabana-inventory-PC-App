@@ -16,6 +16,17 @@ It replaces the earlier Electron-style `PC App/` folder inside the main
 repo — that approach is abandoned in favor of what's described here. Do not
 resurrect it without reason.
 
+**The frontend is VENDORED, not referenced.** `frontend/` is a read-only
+copy of the cloud app's source (`src/`, `public/`, `index.html`, configs,
+`package.json`), taken once and now OWNED by this repo. This was a
+deliberate decision (2026-08-09): the PC edition needs to add screens the
+cloud app doesn't have (first-run setup) and swap out cloud-only pieces
+(the Edge Functions), which a build-time-only reference can't do. The cloud
+repo is never written to. The cost, accepted knowingly: improvements to the
+cloud app do NOT flow here automatically — re-syncing `frontend/` against
+cloud `main` is a manual step whenever it's wanted. See OPUS-HANDOFF.md for
+what diverges and why.
+
 ## Why not Docker
 
 Considered and rejected: self-hosting the Supabase Docker stack. Docker
@@ -228,17 +239,28 @@ don't treat as current without checking git log.
   matches, specifically to catch drift here loudly instead of silently
   shipping an unpatched frontend.
 
-**Explicitly not done — needs your decision, not just more building:**
-- **`FRONTEND_REPO_PAT` secret** — the CI workflow clones
-  `alqasim91/Shabana-Inventory` (private) to build the frontend; needs a
-  PAT with read access added as a repo secret on
-  `Shabana-inventory-PC-App`. Not set — CI will fail on that step until it
-  is.
-- **Code signing** — deliberately deferred per BUILD_PLAN.md item #5,
-  start once the installer works end-to-end unsigned.
+- **Frontend vendored** into `frontend/` (99 files, read-only copy of cloud
+  source). CI now builds from it directly — the cross-repo checkout and the
+  `FRONTEND_REPO_PAT` secret it needed are both GONE. Simpler, and the repo
+  is now self-contained.
+
+**Explicitly not done — Opus pass (see OPUS-HANDOFF.md for the full spec):**
+- **Single-tenant first-run bootstrap** — the cloud app is multi-tenant
+  (orgs, slugs, `platform_admins`, service-role Edge Functions that mint
+  auth users). A PC install is one shop with an empty first-run DB and no
+  edge runtime, so both onboarding (`create-organization`) and ongoing user
+  creation (`admin-create-user`) need local replacements that mint
+  `auth.users` without a service key in the browser. This is the main new
+  build work and it's security-critical — left entirely for Opus.
+- **Review the three flagged files** — `generate-secrets.ps1`,
+  `migrate.ps1`, `platform-bootstrap.sql` (esp. the `auth.uid()` claim
+  format vs. the pinned PostgREST version — the one line that fails the
+  whole permission system silently if wrong).
+- **Code signing** — deferred per item #5, start once the installer works
+  end-to-end unsigned.
 - **Nothing in this repo has been run.** Not on a Windows VM, not on real
   hardware, not even `ISCC.exe` locally. First real signal will be the CI
-  workflow's own build log once the two items above are resolved.
+  workflow's own build log.
 
 ## Constraints carried over from the main project
 

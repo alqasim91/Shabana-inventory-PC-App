@@ -31,21 +31,13 @@ jobs:
         with:
           path: pc-app
 
-      # The frontend is the SAME application code as the cloud product,
-      # UNCHANGED — see BUILD_PLAN.md "Why not build-time secrets" for why
-      # that's possible despite each customer needing a unique anon key
-      # (short version: built with placeholder tokens here, patched to
-      # real per-machine values at install time by
-      # installer/scripts/patch-frontend-config.ps1). Requires a PAT with
-      # read access to the (private) Shabana-Inventory repo, stored as the
-      # FRONTEND_REPO_PAT secret. Not yet configured — see the summary
-      # note delivered alongside this workflow.
-      - name: Checkout frontend source
-        uses: actions/checkout@v4
-        with:
-          repository: alqasim91/Shabana-Inventory
-          token: ${{ secrets.FRONTEND_REPO_PAT }}
-          path: frontend-src
+      # The frontend is VENDORED into this repo (frontend/) — a read-only
+      # copy of the Shabana-Inventory source, which this repo now owns and
+      # can diverge (PC-only screens etc.). No cross-repo checkout, no PAT.
+      # Built with placeholder tokens for VITE_SUPABASE_URL/ANON_KEY that
+      # patch-frontend-config.ps1 replaces per-machine at install time —
+      # see BUILD_PLAN.md "Why not build-time secrets". Re-syncing this
+      # copy against cloud improvements is a manual step, by design.
 
       - name: Set version
         id: version
@@ -106,13 +98,18 @@ jobs:
           cd gotrue-src
           GOOS=windows GOARCH=amd64 go build -o ../pc-app/installer/payload/bin/gotrue/gotrue.exe .
 
-      # --- Frontend: identical source to the cloud app, no changes needed
-      # there. Built with placeholder tokens standing in for
-      # VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY — Vite bakes these in as
-      # literal strings, and installer/scripts/patch-frontend-config.ps1
-      # replaces them with each customer's real values at install time.
-      # These token strings MUST match patch-frontend-config.ps1 exactly —
-      # see that script's header. ---
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # --- Frontend: the vendored copy under frontend/. Built with
+      # placeholder tokens standing in for VITE_SUPABASE_URL/
+      # VITE_SUPABASE_ANON_KEY — Vite bakes these in as literal strings,
+      # and installer/scripts/patch-frontend-config.ps1 replaces them with
+      # each customer's real values at install time. These token strings
+      # MUST match patch-frontend-config.ps1 exactly — see that script's
+      # header. ---
       - name: Build frontend
         shell: bash
         env:
@@ -123,10 +120,10 @@ jobs:
           VITE_SUPABASE_URL: "__SHABANA_RUNTIME_SUPABASE_URL__"
           VITE_SUPABASE_ANON_KEY: "__SHABANA_RUNTIME_ANON_KEY__"
         run: |
-          cd frontend-src
+          cd pc-app/frontend
           npm ci
           npm run build
-          cp -r dist/* ../pc-app/installer/payload/www/
+          cp -r dist/* ../installer/payload/www/
 
       - name: Copy migrations + installer scripts into payload
         shell: pwsh
