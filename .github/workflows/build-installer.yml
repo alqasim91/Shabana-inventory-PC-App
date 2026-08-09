@@ -31,11 +31,15 @@ jobs:
         with:
           path: pc-app
 
-      # The frontend is the SAME application code as the cloud product —
-      # see BUILD_PLAN.md "why not vendor the frontend". Requires a PAT
-      # with read access to the (private) Shabana-Inventory repo, stored
-      # as the FRONTEND_REPO_PAT secret. Not yet configured — see the
-      # summary note delivered alongside this workflow.
+      # The frontend is the SAME application code as the cloud product,
+      # UNCHANGED — see BUILD_PLAN.md "Why not build-time secrets" for why
+      # that's possible despite each customer needing a unique anon key
+      # (short version: built with placeholder tokens here, patched to
+      # real per-machine values at install time by
+      # installer/scripts/patch-frontend-config.ps1). Requires a PAT with
+      # read access to the (private) Shabana-Inventory repo, stored as the
+      # FRONTEND_REPO_PAT secret. Not yet configured — see the summary
+      # note delivered alongside this workflow.
       - name: Checkout frontend source
         uses: actions/checkout@v4
         with:
@@ -102,14 +106,22 @@ jobs:
           cd gotrue-src
           GOOS=windows GOARCH=amd64 go build -o ../pc-app/installer/payload/bin/gotrue/gotrue.exe .
 
-      # --- Frontend: same build the cloud app uses, pointed at a runtime
-      # config file instead of a build-time env var. See BUILD_PLAN.md
-      # "Why not build-time secrets" — this step depends on a small,
-      # not-yet-made change to the frontend's Supabase client bootstrap
-      # (reading window.__RUNTIME_CONFIG__ when present). Will fail until
-      # that lands. ---
+      # --- Frontend: identical source to the cloud app, no changes needed
+      # there. Built with placeholder tokens standing in for
+      # VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY — Vite bakes these in as
+      # literal strings, and installer/scripts/patch-frontend-config.ps1
+      # replaces them with each customer's real values at install time.
+      # These token strings MUST match patch-frontend-config.ps1 exactly —
+      # see that script's header. ---
       - name: Build frontend
         shell: bash
+        env:
+          # Bare tokens, no protocol prefix here — patch-frontend-config.ps1
+          # replaces each token with a full "http://localhost:PORT" value
+          # that already includes the scheme. Prefixing it here too would
+          # double it up into "http://http://...".
+          VITE_SUPABASE_URL: "__SHABANA_RUNTIME_SUPABASE_URL__"
+          VITE_SUPABASE_ANON_KEY: "__SHABANA_RUNTIME_ANON_KEY__"
         run: |
           cd frontend-src
           npm ci

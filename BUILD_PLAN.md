@@ -208,23 +208,27 @@ don't treat as current without checking git log.
   skip its interactive confirmation prompt; without that flag an
   unattended migration failure would hang forever waiting for a "YES" that
   never comes. Caught and fixed during this pass.
+- **Per-machine frontend config, without touching
+  `alqasim91/Shabana-Inventory`.** Original plan needed a small edit to
+  that repo's Supabase client bootstrap (read a runtime-fetched config
+  file). Explicitly ruled out — that repo stays untouched. Solved instead
+  entirely within this repo: CI builds the frontend with placeholder
+  tokens (`__SHABANA_RUNTIME_SUPABASE_URL__` /
+  `__SHABANA_RUNTIME_ANON_KEY__`) standing in for
+  `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` — Vite bakes these in as
+  literal strings at build time regardless of what the values are, so no
+  source change was needed, only different env var *values* passed to a
+  build the cloud repo already supports. `patch-frontend-config.ps1` then
+  does a plain text find-and-replace across the built `.js` files at
+  install time, once per machine, substituting the real local URL and
+  generated anon key. The token strings are duplicated in two places
+  (`.github/workflows/build-installer.yml`'s build step and
+  `patch-frontend-config.ps1`'s header) and must stay byte-for-byte
+  identical — the patch script refuses to continue if it finds zero
+  matches, specifically to catch drift here loudly instead of silently
+  shipping an unpatched frontend.
 
 **Explicitly not done — needs your decision, not just more building:**
-- **Runtime config for the frontend.** GitHub Actions builds one installer
-  downloaded by every customer, but each customer's `anon` key is unique
-  (per item #1). A Vite build bakes `VITE_SUPABASE_ANON_KEY` in at build
-  time, so the frontend needs a small change to read `runtime-config.json`
-  (already scaffolded — `installer/config/runtime-config.json.template`,
-  served by `installer/config/Caddyfile.template`) instead. This requires
-  editing `alqasim91/Shabana-Inventory`'s Supabase client bootstrap — a
-  small, additive, backward-compatible change (falls back to
-  `import.meta.env` when the runtime file isn't present, so the cloud
-  build is unaffected), but it touches the production app's source, which
-  felt like it needed a heads-up rather than a silent edit mid-scaffold of
-  a different repo. Blocks: the CI workflow's frontend build step, the
-  first-run admin setup screen, the last-backup indicator, and the
-  problem-report button — all four are frontend work that depends on this
-  landing first.
 - **`FRONTEND_REPO_PAT` secret** — the CI workflow clones
   `alqasim91/Shabana-Inventory` (private) to build the frontend; needs a
   PAT with read access added as a repo secret on

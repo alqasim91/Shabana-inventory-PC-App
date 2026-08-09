@@ -121,10 +121,23 @@ $replacements = @{
 $templateDir = Join-Path $PSScriptRoot '..\config'
 $configDir   = Join-Path $InstallDir 'config'
 
-Set-FromTemplate -TemplatePath (Join-Path $templateDir 'Caddyfile.template')          -OutPath (Join-Path $configDir 'Caddyfile')           -Replacements $replacements
-Set-FromTemplate -TemplatePath (Join-Path $templateDir 'gotrue.env.template')          -OutPath (Join-Path $configDir 'gotrue.env')           -Replacements $replacements
-Set-FromTemplate -TemplatePath (Join-Path $templateDir 'postgrest.conf.template')      -OutPath (Join-Path $configDir 'postgrest.conf')       -Replacements $replacements
-Set-FromTemplate -TemplatePath (Join-Path $templateDir 'runtime-config.json.template') -OutPath (Join-Path $configDir 'runtime-config.json')  -Replacements $replacements
+Set-FromTemplate -TemplatePath (Join-Path $templateDir 'Caddyfile.template')     -OutPath (Join-Path $configDir 'Caddyfile')      -Replacements $replacements
+Set-FromTemplate -TemplatePath (Join-Path $templateDir 'gotrue.env.template')     -OutPath (Join-Path $configDir 'gotrue.env')     -Replacements $replacements
+Set-FromTemplate -TemplatePath (Join-Path $templateDir 'postgrest.conf.template') -OutPath (Join-Path $configDir 'postgrest.conf') -Replacements $replacements
+
+# Patch this machine's real URL + anon key into the already-built frontend
+# in place of the placeholder tokens CI baked in — see
+# patch-frontend-config.ps1 for why this exists instead of a runtime-fetch
+# endpoint or an edit to the frontend's source repo.
+$wwwDir = Join-Path $InstallDir 'www'
+if (Test-Path $wwwDir) {
+    & (Join-Path $PSScriptRoot 'patch-frontend-config.ps1') `
+        -WwwDir $wwwDir `
+        -SupabaseUrl "http://localhost:$($ports.HTTP_PORT)" `
+        -AnonKey $anonKey
+} else {
+    Write-Warning "www\ not found under $InstallDir — skipping frontend patch (expected during provisioning before [Files] copies it; not expected otherwise)."
+}
 
 # service_role key is not embedded in any served file (it must never reach
 # a browser). It's written once, locally, for admin scripts (backup /

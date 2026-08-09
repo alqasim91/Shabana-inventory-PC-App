@@ -7,17 +7,14 @@
 }
 
 :{{HTTP_PORT}} {
-	# Static frontend build.
+	# Static frontend build. The Supabase URL/anon key baked into these
+	# files are per-machine, patched in place at install time by
+	# patch-frontend-config.ps1 — see that script and BUILD_PLAN.md, "Why
+	# not build-time secrets." No separate runtime-config endpoint needed:
+	# the values are already literal strings in the JS by the time Caddy
+	# ever serves it.
 	root * {{INSTALL_DIR}}\www
 	file_server
-
-	# Runtime config (per-machine anon key + URL) — fetched by the frontend
-	# at startup instead of a build-time env var. See BUILD_PLAN.md, "Why
-	# not build-time secrets."
-	handle /runtime-config.json {
-		root * {{INSTALL_DIR}}\config
-		file_server
-	}
 
 	# First-run admin setup must never be reachable from outside this PC —
 	# an unclaimed admin account behind a public tunnel URL is a race

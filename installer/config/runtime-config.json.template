@@ -1,5 +1,0 @@
-{
-  "supabaseUrl": "http://localhost:{{HTTP_PORT}}",
-  "supabaseAnonKey": "{{ANON_KEY}}",
-  "mode": "pc-local"
-}
