@@ -1,4 +1,4 @@
-# Generated from this template by provision.ps1 — do not edit the installed
+# Generated from this template by provision.ps1 - do not edit the installed
 # copy directly, edit here and re-run provisioning, or your changes are lost
 # on the next upgrade.
 
@@ -9,7 +9,7 @@
 :{{HTTP_PORT}} {
 	# Static frontend build. The Supabase URL/anon key baked into these files
 	# are per-machine, patched in place at install time by
-	# patch-frontend-config.ps1 — see that script and BUILD_PLAN.md, "Why not
+	# patch-frontend-config.ps1 - see that script and BUILD_PLAN.md, "Why not
 	# build-time secrets." No runtime-config endpoint needed: the values are
 	# already literal strings in the JS by the time Caddy serves it.
 	root * {{INSTALL_DIR}}\www
@@ -20,7 +20,7 @@
 	# machine. pc_first_run_bootstrap is already one-shot server-side (it
 	# refuses once any org exists), but we ALSO restrict both the setup UI and
 	# the claim RPC to 127.0.0.1 so a remote party can neither see the form nor
-	# call the RPC directly (it lives at /rest/v1/rpc/..., not /setup — gating
+	# call the RPC directly (it lives at /rest/v1/rpc/..., not /setup - gating
 	# only the UI would leave the RPC reachable). Defence in depth.
 	#
 	# These two handle blocks are BEFORE the generic /rest/v1 and SPA handlers
@@ -38,7 +38,7 @@
 	handle @setup {
 		@remoteSetup not remote_ip 127.0.0.1 ::1
 		respond @remoteSetup "Not available remotely" 403
-		# /setup is a client-side route, not a file — serve the SPA shell and
+		# /setup is a client-side route, not a file - serve the SPA shell and
 		# let the router take over.
 		rewrite * /index.html
 		file_server
@@ -56,7 +56,7 @@
 	}
 
 	# --- PC operational status (backup badge) ------------------------------
-	# Small JSON files written by the maintenance scripts (e.g. backup.ps1 →
+	# Small JSON files written by the maintenance scripts (e.g. backup.ps1 ->
 	# last-backup.json), served read-only for the in-app status widgets. Lives
 	# outside www\ so it survives upgrades that replace the frontend.
 	handle /pc/* {

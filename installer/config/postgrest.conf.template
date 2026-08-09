@@ -7,7 +7,7 @@ db-anon-role = "anon"
 # No jwt-aud: the anon and service_role keys generate-secrets.ps1 mints carry
 # no `aud` claim (matching how Supabase's own anon/service keys look), while
 # GoTrue's user tokens carry aud=authenticated. Setting jwt-aud here would make
-# PostgREST reject any token whose aud doesn't match — silently breaking the
+# PostgREST reject any token whose aud doesn't match - silently breaking the
 # anon key, and with it the app's ability to load at all. Every token in this
 # stack targets this one PostgREST, so auditing the audience buys nothing.
 jwt-secret = "{{JWT_SECRET}}"

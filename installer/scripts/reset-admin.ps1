@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
     Resets a user's password directly in auth.users. Run locally on the
-    server PC only — there is no email-based reset path (no SMTP on a
+    server PC only - there is no email-based reset path (no SMTP on a
     shop PC with no guaranteed internet), so this local script running
     with physical access to the machine IS the account-recovery story.
 
 .NOTES
-    BUILD_PLAN.md item #4. Must exist before the first customer install —
+    BUILD_PLAN.md item #4. Must exist before the first customer install -
     an admin lockout with no recovery path locks a shop out of its own
     books.
 #>
@@ -32,9 +32,12 @@ if ($plain1 -ne $plain2) { throw "Passwords do not match." }
 if ($plain1.Length -lt 8) { throw "Password must be at least 8 characters." }
 
 $env:PGPASSWORD = $dbPassword
+# A typed password may contain non-ASCII; pin client encoding to UTF8 so it
+# reaches the DB intact.
+$env:PGCLIENTENCODING = 'UTF8'
 try {
     # GoTrue hashes passwords with bcrypt via its own crypt() call using
-    # pgcrypto — matching that exactly here (rather than reimplementing
+    # pgcrypto - matching that exactly here (rather than reimplementing
     # bcrypt in PowerShell) so the row this writes is indistinguishable
     # from one GoTrue wrote itself.
     $sql = @"

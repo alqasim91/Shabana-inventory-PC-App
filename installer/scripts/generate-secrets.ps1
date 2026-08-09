@@ -4,12 +4,12 @@
     anon/service_role JWTs, and writes every config file that needs them.
 
 .NOTES
-    SECURITY-CRITICAL — flagged in BUILD_PLAN.md item #1 for a dedicated
+    SECURITY-CRITICAL - flagged in BUILD_PLAN.md item #1 for a dedicated
     review pass before this ships to a real customer.
 
     Every value here MUST be unique per install. If two customers ever
-    share a JWT secret, either one can forge a service_role token — which
-    bypasses every RLS policy — against the OTHER customer's tunnel URL.
+    share a JWT secret, either one can forge a service_role token - which
+    bypasses every RLS policy - against the OTHER customer's tunnel URL.
     This script must never read a secret from anywhere but its own fresh
     random generation, and its output must never be committed to git,
     logged, or reused by copying files between installs.
@@ -17,7 +17,7 @@
     JWT construction follows Supabase's own self-hosting documentation:
     HS256, shared secret, standard `role` claim consumed by PostgREST's
     `db-anon-role` / RLS `current_setting('request.jwt.claims')`. Nothing
-    exotic — but "not exotic" is not the same as "verified," hence the
+    exotic - but "not exotic" is not the same as "verified," hence the
     review flag above.
 #>
 
@@ -39,7 +39,7 @@ function New-RandomBase64Secret {
 
 function New-RandomPassword {
     param([int]$Length = 32)
-    # Alphanumeric only — this password is interpolated into postgres
+    # Alphanumeric only - this password is interpolated into postgres
     # connection strings and .env files; avoiding punctuation sidesteps a
     # whole class of quoting/escaping bugs across three different config
     # formats (env file, libpq URI, Caddyfile).
@@ -61,7 +61,7 @@ function New-SupabaseJwt {
         [Parameter(Mandatory = $true)][string]$Role
     )
     $iat = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    $exp = $iat + (10 * 365 * 24 * 60 * 60)  # 10 years — see BUILD_PLAN.md upgrade notes on rotation
+    $exp = $iat + (10 * 365 * 24 * 60 * 60)  # 10 years - see BUILD_PLAN.md upgrade notes on rotation
 
     $header  = '{"alg":"HS256","typ":"JWT"}'
     $payload = "{`"role`":`"$Role`",`"iss`":`"shabana-pc`",`"iat`":$iat,`"exp`":$exp}"
@@ -87,13 +87,18 @@ function Set-FromTemplate {
         [Parameter(Mandatory = $true)][string]$OutPath,
         [Parameter(Mandatory = $true)][hashtable]$Replacements
     )
-    $content = Get-Content -Raw -Path $TemplatePath
+    $content = Get-Content -Raw -Path $TemplatePath -Encoding UTF8
     foreach ($key in $Replacements.Keys) {
         $content = $content.Replace("{{$key}}", [string]$Replacements[$key])
     }
     $outDir = Split-Path -Parent $OutPath
     if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
-    Set-Content -Path $OutPath -Value $content -NoNewline -Encoding UTF8
+    # ASCII, NOT `-Encoding UTF8`: in Windows PowerShell 5.1 `Set-Content
+    # -Encoding UTF8` prepends a BOM. A BOM in these config files is at best
+    # ugly and at worst breaks the reader (Caddy/PostgREST/GoTrue). All
+    # generated content here is ASCII (base64/JWT/alphanumeric/ASCII paths),
+    # so ASCII is exact and BOM-free.
+    Set-Content -Path $OutPath -Value $content -NoNewline -Encoding ASCII
 }
 
 # --- Generate ---------------------------------------------------------
@@ -126,7 +131,7 @@ Set-FromTemplate -TemplatePath (Join-Path $templateDir 'gotrue.env.template')   
 Set-FromTemplate -TemplatePath (Join-Path $templateDir 'postgrest.conf.template') -OutPath (Join-Path $configDir 'postgrest.conf') -Replacements $replacements
 
 # Patch this machine's real URL + anon key into the already-built frontend
-# in place of the placeholder tokens CI baked in — see
+# in place of the placeholder tokens CI baked in - see
 # patch-frontend-config.ps1 for why this exists instead of a runtime-fetch
 # endpoint or an edit to the frontend's source repo.
 $wwwDir = Join-Path $InstallDir 'www'
@@ -136,17 +141,22 @@ if (Test-Path $wwwDir) {
         -SupabaseUrl "http://localhost:$($ports.HTTP_PORT)" `
         -AnonKey $anonKey
 } else {
-    Write-Warning "www\ not found under $InstallDir — skipping frontend patch (expected during provisioning before [Files] copies it; not expected otherwise)."
+    Write-Warning "www\ not found under $InstallDir - skipping frontend patch (expected during provisioning before [Files] copies it; not expected otherwise)."
 }
 
 # service_role key is not embedded in any served file (it must never reach
 # a browser). It's written once, locally, for admin scripts (backup /
 # restore / reset-admin / migrate) to read when they need elevated access.
-Set-Content -Path (Join-Path $configDir 'service-role.key') -Value $serviceRoleKey -NoNewline -Encoding UTF8
+# ASCII (no BOM) - a JWT is ASCII, and a BOM would corrupt it for any reader.
+Set-Content -Path (Join-Path $configDir 'service-role.key') -Value $serviceRoleKey -NoNewline -Encoding ASCII
 
 # DB password alone, for scripts that shell out to psql/pg_dump without
-# parsing gotrue.env.
-Set-Content -Path (Join-Path $configDir 'db-password.key') -Value $dbPassword -NoNewline -Encoding UTF8
+# parsing gotrue.env. CRITICAL that this is BOM-free: initdb reads it via
+# --pwfile and does NOT strip a BOM, so a BOM here would make the postgres
+# superuser password differ from what every psql call later sends (which
+# Get-Content strips) - every DB connection would then fail auth. ASCII
+# guarantees no BOM (the password is alphanumeric).
+Set-Content -Path (Join-Path $configDir 'db-password.key') -Value $dbPassword -NoNewline -Encoding ASCII
 
 Write-Host "Secrets generated and config files written to $configDir"
-Write-Host "JWT secret and DB password are unique to this machine — do not copy config\ between installs."
+Write-Host "JWT secret and DB password are unique to this machine - do not copy config\ between installs."

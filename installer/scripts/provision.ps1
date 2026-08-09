@@ -14,7 +14,7 @@
       backups\                                          -- pg_dump output
       logs\
 
-    Install path is fixed under ProgramData, never a user profile — Windows
+    Install path is fixed under ProgramData, never a user profile - Windows
     usernames on these machines are often Arabic, and PostgreSQL on Windows
     does not reliably handle non-ASCII data directory paths. See
     BUILD_PLAN.md item #7.
@@ -53,7 +53,7 @@ Write-Host 'Generating per-machine secrets and config...'
 $dbPasswordFile = Join-Path $configDir 'db-password.key'
 
 # --- initdb -------------------------------------------------------------
-# Fixed UTF8/C locale and explicit Cairo timezone at creation time — see
+# Fixed UTF8/C locale and explicit Cairo timezone at creation time - see
 # BUILD_PLAN.md items #3 and #7. Never inherit whatever locale/timezone
 # Windows happens to be set to.
 
@@ -87,6 +87,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Postgres failed to start for provisioning' }
 
 $dbPassword = Get-Content $dbPasswordFile -Raw
 $env:PGPASSWORD = $dbPassword
+# The SQL files (platform-bootstrap + migrations) contain Arabic string
+# literals. Without this, psql on Windows infers client_encoding from the
+# console codepage (often WIN1252), so the UTF-8 bytes in those files reach
+# the UTF-8 database mis-decoded - mangled Arabic, or an encoding error. The
+# DB is UTF8 (initdb --encoding=UTF8), so pin the client to match.
+$env:PGCLIENTENCODING = 'UTF8'
 
 try {
     $psql = Join-Path $pgBin 'psql.exe'
@@ -95,41 +101,41 @@ try {
     # authenticator/supabase_auth_admin), auth/storage schemas, required
     # extensions. Cloud Supabase provisions this automatically; a
     # self-host must do it explicitly, once, before the app's own
-    # migrations run. Vendored from Supabase's own postgres repo — see
+    # migrations run. Vendored from Supabase's own postgres repo - see
     # supabase/platform-bootstrap.sql header for provenance and the one
     # deliberate addition (the supabase_admin shim).
     if (-not (Test-Path $bootstrapSql)) {
-        throw "platform-bootstrap.sql not found — see BUILD_PLAN.md. Provisioning cannot safely continue without it."
+        throw "platform-bootstrap.sql not found - see BUILD_PLAN.md. Provisioning cannot safely continue without it."
     }
     Write-Host 'Applying platform bootstrap...'
-    & $psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f $bootstrapSql
+    & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -f $bootstrapSql
     if ($LASTEXITCODE -ne 0) { throw 'Platform bootstrap failed' }
 
     # PostgREST connects as `authenticator`, GoTrue as `supabase_auth_admin`
     # (see installer/config/postgrest.conf.template and gotrue.env.template)
-    # — the bootstrap above creates both roles but sets no password on
+    # - the bootstrap above creates both roles but sets no password on
     # either. Reusing the one generated DB password here keeps every script
     # in this repo (backup/restore/migrate/reset-admin) working off a
     # single value read from config\db-password.key, rather than tracking
     # a separate secret per role.
     Write-Host 'Setting role passwords...'
     $escapedPw = $dbPassword.Replace("'", "''")
-    & $psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "alter role authenticator password '$escapedPw';"
-    & $psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_auth_admin password '$escapedPw';"
-    & $psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_storage_admin password '$escapedPw';"
+    & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -c "alter role authenticator password '$escapedPw';"
+    & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_auth_admin password '$escapedPw';"
+    & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_storage_admin password '$escapedPw';"
     if ($LASTEXITCODE -ne 0) { throw 'Failed to set role passwords' }
 
     Write-Host 'Applying application migrations...'
     Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
         Write-Host "  -> $($_.Name)"
-        & $psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f $_.FullName
+        & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -f $_.FullName
         if ($LASTEXITCODE -ne 0) { throw "Migration failed: $($_.Name)" }
     }
 
     # Record what's applied, for migrate.ps1 on future upgrades.
-    & $psql -U postgres -d postgres -c "create table if not exists shabana_migrations (filename text primary key, applied_at timestamptz not null default now());"
+    & $psql -U postgres -h 127.0.0.1 -d postgres -c "create table if not exists shabana_migrations (filename text primary key, applied_at timestamptz not null default now());"
     Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
-        & $psql -U postgres -d postgres -c "insert into shabana_migrations (filename) values ('$($_.Name)') on conflict do nothing;"
+        & $psql -U postgres -h 127.0.0.1 -d postgres -c "insert into shabana_migrations (filename) values ('$($_.Name)') on conflict do nothing;"
     }
 }
 finally {

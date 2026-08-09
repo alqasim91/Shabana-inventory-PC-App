@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Restore the database from a backup dump. Interactive by default —
+    Restore the database from a backup dump. Interactive by default -
     lists available backups, confirms before doing anything destructive.
 
 .NOTES
@@ -14,7 +14,7 @@ param(
     [string]$InstallDir = 'C:\ProgramData\Shabana',
     [string]$BackupDir = (Join-Path $InstallDir 'backups'),
     [string]$DumpFile,
-    # For automated rollback callers only (migrate.ps1) — skips the
+    # For automated rollback callers only (migrate.ps1) - skips the
     # interactive confirmation, which would otherwise hang forever waiting
     # for input that will never come on an unattended failure. Never pass
     # this when a human is running the script by hand.
@@ -46,11 +46,11 @@ Write-Host "Everything recorded since that backup was made will be lost."
 if (-not $Force) {
     $confirm = Read-Host "Type YES (in capitals) to continue"
     if ($confirm -ne 'YES') {
-        Write-Host "Cancelled — no changes made."
+        Write-Host "Cancelled - no changes made."
         return
     }
 } else {
-    Write-Host "(-Force: proceeding without confirmation — automated rollback)"
+    Write-Host "(-Force: proceeding without confirmation - automated rollback)"
 }
 
 Write-Host "Stopping application services..."
@@ -66,7 +66,7 @@ try {
 
     Write-Host "Restoring from dump..."
     & (Join-Path $pgBin 'pg_restore.exe') -U postgres -h 127.0.0.1 -d postgres $DumpFile
-    if ($LASTEXITCODE -ne 0) { throw "pg_restore reported errors — check output above before trusting this restore." }
+    if ($LASTEXITCODE -ne 0) { throw "pg_restore reported errors - check output above before trusting this restore." }
 } finally {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
 }

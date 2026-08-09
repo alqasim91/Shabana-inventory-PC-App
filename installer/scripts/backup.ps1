@@ -6,7 +6,7 @@
 
 .NOTES
     BUILD_PLAN.md item #2. A dump on the same physical disk as the live
-    database is not a backup — it dies with the drive. The setup screen
+    database is not a backup - it dies with the drive. The setup screen
     should steer the owner toward a second drive or a USB stick for
     -BackupDir; this script does not enforce that, it just writes wherever
     it's told.
@@ -31,7 +31,7 @@ if ($Register) {
 
     Register-ScheduledTask -TaskName 'ShabanaNightlyBackup' `
         -Action $action -Trigger $trigger -Principal $principal -Settings $settings `
-        -Description 'Nightly database backup for مخزون شبانة (PC edition)' `
+        -Description 'Nightly database backup for Shabana Inventory (PC edition)' `
         -Force | Out-Null
 
     Write-Host 'Nightly backup task registered (03:00 daily).'
@@ -53,7 +53,7 @@ try {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
 }
 
-# A dump the app can't read is worse than no dump — it's a false sense of
+# A dump the app can't read is worse than no dump - it's a false sense of
 # safety. Record success/failure so the in-app "last backup" badge can warn
 # when the job silently stops working.
 $sizeOk = (Get-Item $outFile).Length -gt 1024
@@ -65,15 +65,18 @@ $status = [ordered]@{
 
 # Two copies. One next to the dumps (for a human browsing the backup folder),
 # and one at a FIXED, Caddy-served path under InstallDir\public that the
-# Dashboard fetches at /pc/last-backup.json — fixed because BackupDir may be a
+# Dashboard fetches at /pc/last-backup.json - fixed because BackupDir may be a
 # USB stick the browser can't reach, and because it must survive an upgrade
 # that replaces www\.
-Set-Content -Path (Join-Path $BackupDir 'last-backup-status.json') -Value $status -Encoding UTF8
+# ASCII, NOT `-Encoding UTF8`: PS 5.1 would write a BOM, and the browser's
+# fetch().json() on /pc/last-backup.json throws on a leading BOM. The JSON is
+# ASCII (timestamp, bool, an ASCII install path).
+Set-Content -Path (Join-Path $BackupDir 'last-backup-status.json') -Value $status -Encoding ASCII
 $publicDir = Join-Path $InstallDir 'public'
 if (-not (Test-Path $publicDir)) { New-Item -ItemType Directory -Path $publicDir -Force | Out-Null }
-Set-Content -Path (Join-Path $publicDir 'last-backup.json') -Value $status -Encoding UTF8
+Set-Content -Path (Join-Path $publicDir 'last-backup.json') -Value $status -Encoding ASCII
 
-if (-not $sizeOk) { throw "Backup file suspiciously small — treating as failed: $outFile" }
+if (-not $sizeOk) { throw "Backup file suspiciously small - treating as failed: $outFile" }
 
 # Retention: delete dumps older than $RetentionDays.
 Get-ChildItem -Path $BackupDir -Filter 'shabana-*.dump' |

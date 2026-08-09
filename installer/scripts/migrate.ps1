@@ -5,7 +5,7 @@
     automatically if any migration fails partway through.
 
 .NOTES
-    SECURITY/CORRECTNESS-CRITICAL — flagged in BUILD_PLAN.md item #6 for a
+    SECURITY/CORRECTNESS-CRITICAL - flagged in BUILD_PLAN.md item #6 for a
     dedicated review pass before this ships. This script runs unattended,
     on live customer financial data, on a machine with no one around to
     intervene if something goes wrong. The backup-then-restore-on-failure
@@ -13,7 +13,7 @@
     work (a restore tested once, by hand) before being trusted to run
     itself.
 
-    Postgres major version is pinned deliberately (see BUILD_PLAN.md) —
+    Postgres major version is pinned deliberately (see BUILD_PLAN.md) -
     this script applies application migrations only, and must never
     attempt a pg_upgrade. If a future migration requires a Postgres major
     version bump, that is a deliberate, manually-supervised operation, not
@@ -33,10 +33,14 @@ $dbPassword = Get-Content (Join-Path $InstallDir 'config\db-password.key') -Raw
 $psql = Join-Path $pgBin 'psql.exe'
 
 $env:PGPASSWORD = $dbPassword
+# Migration files contain Arabic literals; pin the client encoding to the
+# DB's UTF8 so psql doesn't mis-decode them via the console codepage. See
+# provision.ps1 for the full rationale.
+$env:PGCLIENTENCODING = 'UTF8'
 
 function Get-AppliedMigrations {
     $rows = & $psql -U postgres -h 127.0.0.1 -d postgres -t -A -c "select filename from shabana_migrations order by filename;"
-    if ($LASTEXITCODE -ne 0) { throw "Could not read shabana_migrations — is the database reachable?" }
+    if ($LASTEXITCODE -ne 0) { throw "Could not read shabana_migrations - is the database reachable?" }
     return @($rows -split "`n" | Where-Object { $_.Trim() -ne '' })
 }
 
@@ -53,7 +57,7 @@ try {
     Write-Host "Pending migrations:"
     $pending | ForEach-Object { Write-Host "  - $($_.Name)" }
 
-    # Safety backup BEFORE touching anything. If this fails, we abort —
+    # Safety backup BEFORE touching anything. If this fails, we abort -
     # applying migrations without a fresh restore point is not acceptable
     # on live customer data.
     Write-Host "Taking pre-upgrade backup..."

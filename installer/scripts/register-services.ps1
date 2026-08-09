@@ -6,7 +6,7 @@
 
 .NOTES
     NSSM (nssm.exe) is vendored alongside the other binaries by the CI
-    build — see .github/workflows/build-installer.yml. It's the standard,
+    build - see .github/workflows/build-installer.yml. It's the standard,
     long-established tool for this (wraps any console exe as a proper
     Windows service, handles restart-on-crash).
 #>
@@ -70,7 +70,7 @@ Install-NssmService -Name 'ShabanaGoTrue' `
     -Args '' `
     -WorkingDir (Join-Path $InstallDir 'bin\gotrue') `
     -LogFile (Join-Path $logsDir 'gotrue.log')
-# GoTrue reads its config from env vars — NSSM's AppEnvironmentExtra loads
+# GoTrue reads its config from env vars - NSSM's AppEnvironmentExtra loads
 # them from the generated .env file at service start.
 & $nssm set ShabanaGoTrue AppEnvironmentExtra (Get-Content (Join-Path $configDir 'gotrue.env') -Raw) | Out-Null
 

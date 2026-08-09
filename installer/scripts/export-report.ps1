@@ -7,11 +7,11 @@
     BUILD_PLAN.md item #8. Delivered as a Start Menu shortcut, not an in-app
     button: a browser page can't read the machine's log files or run a local
     zip. Turns an unanswerable "it's broken" call into a file we can actually
-    read — on a machine we can't reach, with no internet.
+    read - on a machine we can't reach, with no internet.
 
     Deliberately collects only logs + config FILENAMES (not contents) + recent
     Postgres errors. It never copies config\*.key, gotrue.env, postgrest.conf
-    or any dump — those hold secrets or customer data and have no place in a
+    or any dump - those hold secrets or customer data and have no place in a
     support bundle.
 #>
 
@@ -34,7 +34,7 @@ try {
         Copy-Item -Path (Join-Path $logsDir '*.log') -Destination $staging -ErrorAction SilentlyContinue
     }
 
-    # 2. An inventory of config — names and sizes only, so we can see WHAT
+    # 2. An inventory of config - names and sizes only, so we can see WHAT
     #    exists without ever exposing the secrets inside those files.
     if (Test-Path $configDir) {
         Get-ChildItem -Path $configDir -File |
@@ -66,14 +66,14 @@ try {
         Out-File -FilePath (Join-Path $staging 'services.txt') -Encoding UTF8
 
     $desktop = [Environment]::GetFolderPath('Desktop')
-    $zipPath = Join-Path $desktop "شبانة-تقرير-المشكلة-$stamp.zip"
+    $zipPath = Join-Path $desktop "Shabana-Problem-Report-$stamp.zip"
     Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zipPath -Force
 
     Write-Host ""
-    Write-Host "تم إنشاء تقرير المشكلة على سطح المكتب:"
+    Write-Host "Problem report created on your Desktop:"
     Write-Host "  $zipPath"
     Write-Host ""
-    Write-Host "أرسل هذا الملف للدعم الفني."
+    Write-Host "Send this file to support."
 }
 finally {
     Remove-Item -Path $staging -Recurse -Force -ErrorAction SilentlyContinue
