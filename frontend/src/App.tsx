@@ -10,6 +10,7 @@ import { ToastProvider } from '@/components/shared/Toast';
 import { ProtectedRoute, RequireRole } from '@/components/ProtectedRoute';
 import { AppShell } from '@/components/layout/AppShell';
 import { Login } from '@/pages/Login';
+import { FirstRunSetup } from '@/pages/FirstRunSetup';
 import { COMMON } from '@/labels';
 
 // Route-level code-splitting: each page (plus its dependencies — Recharts on
@@ -78,6 +79,12 @@ export function App() {
                         session, so a wrong slug just fails to sign in. Static
                         segments outrank dynamic ones in React Router, so this
                         cannot shadow /purchases/:id and friends. */}
+                    {/* PC EDITION: one-time first-run setup, shown before any
+                        account exists. Public by necessity (nobody is logged in
+                        yet); the pc_first_run_bootstrap RPC is one-shot and
+                        Caddy restricts this path to loopback. */}
+                    <Route path="/setup" element={<FirstRunSetup />} />
+
                     <Route path="/login" element={<Login />} />
                     <Route path="/:orgSlug/login" element={<Login />} />
 

@@ -14,7 +14,11 @@ export function ProtectedRoute() {
     );
   }
 
-  if (!session) return <Navigate to="/login" replace />;
+  // PC EDITION: single-tenant, fixed slug 'shabana' — send unauthenticated
+  // users to /shabana/login so the business-code field never appears (there is
+  // only one business on this machine). On a fresh install the Login page
+  // itself detects no org exists and forwards to /setup.
+  if (!session) return <Navigate to="/shabana/login" replace />;
 
   return <Outlet />;
 }

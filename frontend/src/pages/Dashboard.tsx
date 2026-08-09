@@ -7,6 +7,7 @@ import { useSite } from '@/contexts/SiteContext';
 import { todayISODate } from '@/lib/date';
 import { DASHBOARD, PAYMENT_METHOD_LABEL, UNIT_LABEL, SITE, COMMON } from '@/labels';
 import { getDashboard } from '@/services/dashboard';
+import { PcBackupStatus } from '@/components/pc/PcBackupStatus';
 import type { PaymentMethod } from '@/types/database';
 
 const METHOD_ORDER: PaymentMethod[] = ['cash', 'instapay', 'bank_transfer'];
@@ -80,6 +81,8 @@ export function Dashboard() {
 
   return (
     <div>
+      {/* PC edition only — inert on the cloud build (endpoint absent). */}
+      <PcBackupStatus />
       <PageHeader
         title={DASHBOARD.title}
         subtitle={DASHBOARD.subtitle}

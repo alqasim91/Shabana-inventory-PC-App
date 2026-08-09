@@ -244,23 +244,39 @@ don't treat as current without checking git log.
   `FRONTEND_REPO_PAT` secret it needed are both GONE. Simpler, and the repo
   is now self-contained.
 
-**Explicitly not done — Opus pass (see OPUS-HANDOFF.md for the full spec):**
-- **Single-tenant first-run bootstrap** — the cloud app is multi-tenant
-  (orgs, slugs, `platform_admins`, service-role Edge Functions that mint
-  auth users). A PC install is one shop with an empty first-run DB and no
-  edge runtime, so both onboarding (`create-organization`) and ongoing user
-  creation (`admin-create-user`) need local replacements that mint
-  `auth.users` without a service key in the browser. This is the main new
-  build work and it's security-critical — left entirely for Opus.
-- **Review the three flagged files** — `generate-secrets.ps1`,
-  `migrate.ps1`, `platform-bootstrap.sql` (esp. the `auth.uid()` claim
-  format vs. the pinned PostgREST version — the one line that fails the
-  whole permission system silently if wrong).
-- **Code signing** — deferred per item #5, start once the installer works
-  end-to-end unsigned.
-- **Nothing in this repo has been run.** Not on a Windows VM, not on real
-  hardware, not even `ISCC.exe` locally. First real signal will be the CI
-  workflow's own build log.
+**Opus pass (2026-08-09) — DONE, locally tested (full detail in
+[OPUS-HANDOFF.md](OPUS-HANDOFF.md)):**
+- **Single-tenant first-run bootstrap** built as migration
+  `0033_pc_local_auth.sql`: SECURITY DEFINER functions
+  (`pc_needs_setup`, `pc_first_run_bootstrap`, `pc_create_user`) that mint
+  `auth.users` directly — no edge runtime, no service key in the browser.
+  Replaces both cloud Edge Functions. Tested end-to-end against a local
+  Postgres: fresh-run creates org/profile/site/counters, bcrypt login
+  verifies, one-shot guard holds, admin-gating and duplicate handling
+  correct.
+- **The three flagged files reviewed.** Two real bugs found and fixed:
+  `auth.uid()` read a PostgREST-removed per-claim GUC (fixed in 0033 —
+  would have failed every RLS policy closed); `postgrest.conf` set a
+  `jwt-aud` that would have rejected the anon key (removed). `migrate.ps1`
+  rollback logic reviewed + the `-Force` hang fixed; `generate-secrets.ps1`
+  judged sound.
+- **Frontend wired** (vendored): `/setup` first-run screen,
+  `pc_create_user` RPC replacing the edge call, dashboard backup badge,
+  problem-report export as a Start Menu shortcut. Builds clean; placeholder
+  tokens confirmed in the bundle.
+
+**Still not done:**
+- **Code signing + branding icon** — deferred per item #5; `setup.iss` uses
+  Inno's default icon so it compiles.
+- **Nothing has run on Windows yet.** Every piece is verified in isolation
+  (local Postgres tests, source reads of the pinned GoTrue, clean frontend
+  build) but the full chain — initdb → bootstrap → migrations → GoTrue
+  self-migrate → services → /setup → **login** → use — has never run
+  end-to-end. First real signal is the CI build log, then an install on a
+  Windows VM. `migrate.ps1` rollback and the GoTrue-token↔PostgREST
+  handshake specifically need a live run to confirm.
+- **Attachments (Storage server)** and the multi-tenant **/platform**
+  console are out of scope for a single-shop PC (see OPUS-HANDOFF §3).
 
 ## Constraints carried over from the main project
 

@@ -3,6 +3,7 @@ import { Navigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { getOrgPublicName } from '@/services/organization';
+import { needsSetup } from '@/services/setup';
 import { APP_NAME, AUTH } from '@/labels';
 import {
   isValidOrgSlug,
@@ -54,7 +55,20 @@ export function Login() {
     retry: false, // a missing name is cosmetic; don't hammer the API for it
   });
 
+  // PC EDITION: detect a fresh, unclaimed install (no organization yet).
+  const { data: freshInstall } = useQuery({
+    queryKey: ['pc-needs-setup'],
+    queryFn: needsSetup,
+    staleTime: 1000 * 60 * 60 * 24,
+    retry: false,
+  });
+
   if (!loading && session) return <Navigate to="/dashboard" replace />;
+
+  // PC EDITION: on a fresh install no organization exists yet — forward to the
+  // one-time setup screen instead of showing a login nobody can pass. Once an
+  // org exists this returns false and the login form shows normally.
+  if (!loading && !session && freshInstall) return <Navigate to="/setup" replace />;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

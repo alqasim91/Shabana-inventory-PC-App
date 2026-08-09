@@ -7,26 +7,44 @@
 }
 
 :{{HTTP_PORT}} {
-	# Static frontend build. The Supabase URL/anon key baked into these
-	# files are per-machine, patched in place at install time by
-	# patch-frontend-config.ps1 — see that script and BUILD_PLAN.md, "Why
-	# not build-time secrets." No separate runtime-config endpoint needed:
-	# the values are already literal strings in the JS by the time Caddy
-	# ever serves it.
+	# Static frontend build. The Supabase URL/anon key baked into these files
+	# are per-machine, patched in place at install time by
+	# patch-frontend-config.ps1 — see that script and BUILD_PLAN.md, "Why not
+	# build-time secrets." No runtime-config endpoint needed: the values are
+	# already literal strings in the JS by the time Caddy serves it.
 	root * {{INSTALL_DIR}}\www
-	file_server
 
-	# First-run admin setup must never be reachable from outside this PC —
-	# an unclaimed admin account behind a public tunnel URL is a race
-	# anyone can win. This block only matters once cloudflared/tunnel mode
-	# is enabled; on local-only installs every request is already loopback.
-	@setup path /setup*
+	# --- First-run claim, loopback-only -------------------------------------
+	# On a tunnelled install there is a window between "installed" and "owner
+	# has set up the admin" where a remote visitor could try to claim the
+	# machine. pc_first_run_bootstrap is already one-shot server-side (it
+	# refuses once any org exists), but we ALSO restrict both the setup UI and
+	# the claim RPC to 127.0.0.1 so a remote party can neither see the form nor
+	# call the RPC directly (it lives at /rest/v1/rpc/..., not /setup — gating
+	# only the UI would leave the RPC reachable). Defence in depth.
+	#
+	# These two handle blocks are BEFORE the generic /rest/v1 and SPA handlers
+	# on purpose: Caddy evaluates handle blocks in source order, first match
+	# wins, so the specific paths must precede the general ones.
+	@firstRunRpc path /rest/v1/rpc/pc_first_run_bootstrap
+	handle @firstRunRpc {
+		@remoteRpc not remote_ip 127.0.0.1 ::1
+		respond @remoteRpc "Not available remotely" 403
+		uri strip_prefix /rest/v1
+		reverse_proxy 127.0.0.1:{{POSTGREST_PORT}}
+	}
+
+	@setup path /setup /setup/*
 	handle @setup {
-		@notLocal not remote_ip 127.0.0.1 ::1
-		respond @notLocal "Not available remotely" 403
+		@remoteSetup not remote_ip 127.0.0.1 ::1
+		respond @remoteSetup "Not available remotely" 403
+		# /setup is a client-side route, not a file — serve the SPA shell and
+		# let the router take over.
+		rewrite * /index.html
 		file_server
 	}
 
+	# --- API proxies --------------------------------------------------------
 	handle /rest/v1/* {
 		uri strip_prefix /rest/v1
 		reverse_proxy 127.0.0.1:{{POSTGREST_PORT}}
@@ -37,8 +55,19 @@
 		reverse_proxy 127.0.0.1:{{GOTRUE_PORT}}
 	}
 
-	# SPA fallback — client-side router handles the rest.
+	# --- PC operational status (backup badge) ------------------------------
+	# Small JSON files written by the maintenance scripts (e.g. backup.ps1 →
+	# last-backup.json), served read-only for the in-app status widgets. Lives
+	# outside www\ so it survives upgrades that replace the frontend.
+	handle /pc/* {
+		uri strip_prefix /pc
+		root * {{INSTALL_DIR}}\public
+		file_server
+	}
+
+	# --- Static assets + SPA fallback --------------------------------------
 	handle {
 		try_files {path} /index.html
+		file_server
 	}
 }

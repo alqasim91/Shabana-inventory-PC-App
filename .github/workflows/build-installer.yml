@@ -57,12 +57,21 @@ jobs:
           New-Item -ItemType Directory -Force -Path pc-app/installer/payload/installer
 
       # --- Postgres (theseus-rs/postgresql-binaries — portable msvc build) ---
+      # The zip nests everything under a top-level `postgresql-<ver>-...`
+      # folder, so extract to a temp dir and flatten that one level into
+      # bin/pg — provision.ps1 / register-services.ps1 expect
+      # bin\pg\bin\initdb.exe (no version folder in the path).
       - name: Download Postgres
         shell: pwsh
         run: |
           $url = "https://github.com/theseus-rs/postgresql-binaries/releases/download/${{ env.POSTGRES_VERSION }}/postgresql-${{ env.POSTGRES_VERSION }}-x86_64-pc-windows-msvc.zip"
           Invoke-WebRequest -Uri $url -OutFile pg.zip
-          Expand-Archive -Path pg.zip -DestinationPath pc-app/installer/payload/bin/pg -Force
+          Expand-Archive -Path pg.zip -DestinationPath pg-extracted -Force
+          $inner = Get-ChildItem -Path pg-extracted -Directory | Select-Object -First 1
+          Copy-Item -Path (Join-Path $inner.FullName '*') -Destination pc-app/installer/payload/bin/pg -Recurse -Force
+          if (-not (Test-Path 'pc-app/installer/payload/bin/pg/bin/initdb.exe')) {
+            throw 'Postgres layout unexpected: bin/pg/bin/initdb.exe missing after flatten'
+          }
 
       # --- PostgREST ---
       - name: Download PostgREST

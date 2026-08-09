@@ -54,16 +54,24 @@ try {
 }
 
 # A dump the app can't read is worse than no dump — it's a false sense of
-# safety. Record success/failure where the dashboard's "last backup" badge
-# (see task: last-backup indicator) can find it.
-$statusFile = Join-Path $BackupDir 'last-backup-status.json'
+# safety. Record success/failure so the in-app "last backup" badge can warn
+# when the job silently stops working.
 $sizeOk = (Get-Item $outFile).Length -gt 1024
-$status = @{
+$status = [ordered]@{
     timestamp = (Get-Date).ToString('o')
     file      = $outFile
     success   = $sizeOk
 } | ConvertTo-Json
-Set-Content -Path $statusFile -Value $status -Encoding UTF8
+
+# Two copies. One next to the dumps (for a human browsing the backup folder),
+# and one at a FIXED, Caddy-served path under InstallDir\public that the
+# Dashboard fetches at /pc/last-backup.json — fixed because BackupDir may be a
+# USB stick the browser can't reach, and because it must survive an upgrade
+# that replaces www\.
+Set-Content -Path (Join-Path $BackupDir 'last-backup-status.json') -Value $status -Encoding UTF8
+$publicDir = Join-Path $InstallDir 'public'
+if (-not (Test-Path $publicDir)) { New-Item -ItemType Directory -Path $publicDir -Force | Out-Null }
+Set-Content -Path (Join-Path $publicDir 'last-backup.json') -Value $status -Encoding UTF8
 
 if (-not $sizeOk) { throw "Backup file suspiciously small — treating as failed: $outFile" }
 

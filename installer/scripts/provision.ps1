@@ -34,7 +34,7 @@ $logsDir    = Join-Path $InstallDir 'logs'
 $migrationsDir = Join-Path $PSScriptRoot '..\..\supabase\migrations'
 $bootstrapSql  = Join-Path $PSScriptRoot '..\..\supabase\platform-bootstrap.sql'
 
-foreach ($dir in @($dataDir, $configDir, $logsDir, (Join-Path $InstallDir 'backups'))) {
+foreach ($dir in @($dataDir, $configDir, $logsDir, (Join-Path $InstallDir 'backups'), (Join-Path $InstallDir 'public'))) {
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 }
 

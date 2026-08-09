@@ -23,10 +23,16 @@ export async function updateProfile(userId: UUID, input: ProfileUpdateInput): Pr
   if (error) throw error;
 }
 
-// Account CREATION goes through the admin-create-user Edge Function (service
-// role), which verifies the caller is an admin, creates the auth.users account
-// with an initial password, and inserts the matching profile. Returns a code
-// on business failures (e.g. 'email_exists') for the UI to translate.
+// Account CREATION.
+//
+// PC EDITION: there is no Deno edge runtime on a shop PC and nowhere safe to
+// keep a service_role key, so the cloud app's admin-create-user Edge Function
+// is replaced by the pc_create_user() SQL function (migration 0033), a
+// SECURITY DEFINER routine that writes auth.users directly. It enforces the
+// SAME authority server-side: the caller must be an admin of an org, and the
+// login email is derived from the caller's own org slug inside the function —
+// never from anything the client sends. Same {ok,code} contract as the Edge
+// Function, so the calling UI and its error translations are unchanged.
 export interface CreateUserInput {
   username: string;
   password: string;
@@ -38,26 +44,17 @@ export type CreateUserResult = { ok: true } | { ok: false; code: string; detail?
 
 export async function createUser(input: CreateUserInput): Promise<CreateUserResult> {
   const username = input.username.trim().toLowerCase();
-  // Only the bare username is sent. The Edge Function derives the login email
-  // from the CALLER's own organization slug — if the client supplied it, an
-  // admin could mint an account inside another business's namespace.
-  const body = {
-    username,
-    password: input.password,
-    full_name: input.full_name,
-    role: input.role,
-  };
-  const { data, error } = await supabase.functions.invoke('admin-create-user', { body });
+  // Only the bare username is sent; pc_create_user derives the email from the
+  // caller's org slug. Passing the org from the client would let an admin mint
+  // an account in another business's namespace — but on a single-tenant PC
+  // there is only one org anyway; this preserves the cloud invariant regardless.
+  const { data, error } = await supabase.rpc('pc_create_user', {
+    p_username: username,
+    p_password: input.password,
+    p_full_name: input.full_name,
+    p_role: input.role,
+  });
   if (error) {
-    // Non-2xx (unauthorized / forbidden / server error) — try to read the body.
-    const ctx = (error as { context?: Response }).context;
-    if (ctx && typeof ctx.json === 'function') {
-      try {
-        return (await ctx.json()) as CreateUserResult;
-      } catch {
-        /* fall through */
-      }
-    }
     return { ok: false, code: 'server_error', detail: error.message };
   }
   return data as CreateUserResult;

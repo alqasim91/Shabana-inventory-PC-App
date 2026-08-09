@@ -43,6 +43,44 @@ export const AUTH = {
   sessionExpired: 'انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى',
 } as const;
 
+// PC EDITION ONLY — first-run setup screen (see services/setup.ts).
+export const SETUP = {
+  title: 'الإعداد الأول',
+  subtitle: 'أهلاً بك. لنجهّز البرنامج لأول مرة على هذا الجهاز.',
+  businessName: 'اسم المنشأة',
+  businessNamePlaceholder: 'مثال: شبانة لتجارة الألوميتال',
+  businessNameHint: 'يظهر في الفواتير وصفحة الدخول.',
+  adminFullName: 'اسم المدير',
+  adminFullNamePlaceholder: 'الاسم الذي يظهر في البرنامج',
+  adminUsername: 'اسم مستخدم المدير',
+  adminUsernameHint: 'حروف إنجليزية وأرقام فقط — به تسجّل الدخول.',
+  adminPassword: 'كلمة المرور',
+  adminPasswordConfirm: 'تأكيد كلمة المرور',
+  siteName: 'اسم الفرع الأول',
+  siteNamePlaceholder: 'الفرع الرئيسي',
+  submit: 'إنشاء وبدء الاستخدام',
+  submitting: 'جارٍ الإعداد...',
+  passwordTooShort: 'كلمة المرور يجب ألا تقل عن ٦ أحرف.',
+  passwordMismatch: 'كلمتا المرور غير متطابقتين.',
+  invalidUsername: 'اسم المستخدم يجب أن يكون حروفاً إنجليزية وأرقاماً فقط.',
+  alreadySetup: 'تم إعداد هذا الجهاز بالفعل.',
+  invalidInput: 'تحقق من البيانات المدخلة.',
+  genericError: 'تعذّر إكمال الإعداد. حاول مرة أخرى.',
+} as const;
+
+// PC EDITION ONLY — backup status badge on the Dashboard (see
+// components/pc/PcBackupStatus.tsx). Fed by /pc/last-backup.json, which
+// backup.ps1 writes after each nightly run.
+export const PC_BACKUP = {
+  never: 'لم يتم أخذ نسخة احتياطية بعد',
+  last: 'آخر نسخة احتياطية',
+  today: 'اليوم',
+  yesterday: 'أمس',
+  daysAgo: (n: number) => `منذ ${n} يوم`,
+  failed: 'فشلت آخر نسخة احتياطية — راجع الإعدادات',
+  stale: 'لم تُؤخذ نسخة احتياطية منذ أكثر من يومين',
+} as const;
+
 export const ROLE_LABEL: Record<AppRole, string> = {
   admin: 'مدير عام',
   manager: 'مدير مخازن',

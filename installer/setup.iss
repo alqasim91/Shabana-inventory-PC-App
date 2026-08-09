@@ -37,8 +37,11 @@ PrivilegesRequired=admin
 WizardStyle=modern
 ; Signed separately post-build (BUILD_PLAN.md item #5) — deferred until
 ; the installer works end-to-end unsigned.
-SetupIconFile=payload\icon.ico
-UninstallDisplayIcon={app}\bin\caddy\icon.ico
+; Custom icon (SetupIconFile / UninstallDisplayIcon) deferred alongside
+; signing — a missing SetupIconFile fails compilation, so until a real
+; icon.ico is added to the payload we use Inno's default. TODO before
+; customer release: add branding icon.
+UninstallDisplayIcon={uninstallexe}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -50,9 +53,10 @@ Source: "payload\supabase\*"; DestDir: "{app}\supabase"; Flags: recursesubdirs i
 Source: "payload\installer\*"; DestDir: "{app}\installer"; Flags: recursesubdirs ignoreversion
 
 [Icons]
-Name: "{autodesktop}\{#MyAppName}"; Filename: "http://localhost:8000"; IconFilename: "{app}\bin\caddy\icon.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "http://localhost:8000"
 Name: "{autoprograms}\{#MyAppName}\استعادة نسخة احتياطية"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\restore.ps1"" -InstallDir ""{app}"""
 Name: "{autoprograms}\{#MyAppName}\إعادة تعيين كلمة مرور المدير"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\reset-admin.ps1"" -InstallDir ""{app}"""
+Name: "{autoprograms}\{#MyAppName}\تصدير تقرير المشكلة"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\export-report.ps1"" -InstallDir ""{app}"""
 
 [Run]
 ; Provisioning runs in a visible window (not silently) — if initdb or a
