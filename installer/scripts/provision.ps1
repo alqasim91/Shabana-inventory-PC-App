@@ -234,8 +234,12 @@ try {
         & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $preludeSql
         if ($LASTEXITCODE -ne 0) { throw 'PC prelude failed' }
 
+        # 0033 is DEFERRED until after GoTrue has started once - see the
+        # "auth schema" section further down for why. Everything else applies
+        # here, against the temporary Postgres.
         Write-Host 'Applying application migrations...'
-        Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
+        Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name |
+            Where-Object { $_.Name -notlike '0033_*' } | ForEach-Object {
             Write-Host "  -> $($_.Name)"
             & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $_.FullName
             if ($LASTEXITCODE -ne 0) { throw "Migration failed: $($_.Name)" }
@@ -243,17 +247,11 @@ try {
 
         # Record what's applied, for migrate.ps1 on future upgrades.
         & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "create table if not exists shabana_migrations (filename text primary key, applied_at timestamptz not null default now());"
-        Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
+        Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name |
+            Where-Object { $_.Name -notlike '0033_*' } | ForEach-Object {
             & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "insert into shabana_migrations (filename) values ('$($_.Name)') on conflict do nothing;"
         }
     }
-
-    # Only NOW is the database a complete, usable one. Everything above this
-    # line can be safely thrown away and redone; everything after it cannot.
-    # A future run that finds this marker missing will quarantine the data
-    # directory and start over - see the check near initdb.
-    Set-Content -Path $markerFile -Encoding ASCII -NoNewline `
-        -Value ("provisioned " + (Get-Date).ToString('o'))
 }
 finally {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
@@ -265,6 +263,62 @@ finally {
 
 Write-Host 'Registering Windows services...'
 & (Join-Path $PSScriptRoot 'register-services.ps1') -InstallDir $InstallDir
+
+# --- The auth schema, and why 0033 comes last ------------------------------
+# GoTrue runs its OWN migrations against the auth schema the first time the
+# service starts. Its 00_init_auth_schema does `create or replace function
+# auth.uid()` with a body that reads the per-claim GUC `request.jwt.claim.sub`
+# - a GUC PostgREST stopped setting years ago. 0033 replaces those functions
+# with versions that read the `request.jwt.claims` JSON, and EVERY RLS policy
+# depends on that: with GoTrue's version in place, auth.uid() is always null
+# and every policy fails closed.
+#
+# So the order is forced: GoTrue must migrate FIRST, then 0033 must have the
+# last word. Applying 0033 before starting the services (what we did) meant
+# GoTrue overwrote it - except it never even got that far, because the
+# functions were owned by the bootstrapping superuser and GoTrue connects as
+# supabase_auth_admin, so it died on "must be owner of function uid" and
+# restart-looped forever. pc-prelude.sql now hands it ownership; this section
+# applies 0033 once GoTrue is done.
+#
+# It is also what makes pc_first_run_bootstrap work at all: that function
+# inserts into auth.users columns (email_confirmed_at and friends) that only
+# exist after GoTrue has migrated.
+
+Write-Host 'Waiting for GoTrue to migrate the auth schema...'
+$psql = Join-Path $pgBin 'psql.exe'
+$env:PGPASSWORD = Get-Content $dbPasswordFile -Raw
+$env:PGCLIENTENCODING = 'UTF8'
+try {
+    $authReady = $false
+    for ($i = 0; $i -lt 45; $i++) {
+        $probe = & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -t -A -c `
+            "select count(*) from information_schema.columns where table_schema='auth' and table_name='users' and column_name='email_confirmed_at';"
+        if ($LASTEXITCODE -eq 0 -and ("$probe".Trim() -eq '1')) { $authReady = $true; break }
+        Start-Sleep -Seconds 2
+    }
+    if (-not $authReady) {
+        throw "GoTrue did not migrate the auth schema within 90 seconds - see logs\gotrue.log. Without it there is no login."
+    }
+
+    Write-Host 'Applying PC auth layer (0033)...'
+    Get-ChildItem -Path $migrationsDir -Filter '0033_*.sql' | Sort-Object Name | ForEach-Object {
+        Write-Host "  -> $($_.Name)"
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $_.FullName
+        if ($LASTEXITCODE -ne 0) { throw "Migration failed: $($_.Name)" }
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "insert into shabana_migrations (filename) values ('$($_.Name)') on conflict do nothing;"
+    }
+}
+finally {
+    Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+}
+
+# Only NOW is the database a complete, usable one. Everything above this line
+# can be safely thrown away and redone; everything after it cannot. A future
+# run that finds this marker missing will quarantine the data directory and
+# start over - see the check near initdb.
+Set-Content -Path $markerFile -Encoding ASCII -NoNewline `
+    -Value ("provisioned " + (Get-Date).ToString('o'))
 
 # --- Shortcut target -------------------------------------------------------
 # The Start Menu / desktop shortcuts setup.iss creates point at THIS file

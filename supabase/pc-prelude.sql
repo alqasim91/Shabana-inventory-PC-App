@@ -103,3 +103,31 @@ grant all on storage.objects to authenticated, service_role;
 grant all on storage.buckets to authenticated, service_role;
 grant select on storage.buckets to anon;
 grant execute on function storage.foldername(text) to anon, authenticated, service_role;
+
+-- --- 3. Let GoTrue migrate the auth schema ---------------------------------
+-- GoTrue runs its own migrations, as supabase_auth_admin, the first time the
+-- service starts. Its 00_init_auth_schema does
+--   create or replace function auth.uid() ...
+-- but platform-bootstrap.sql has already created those functions, owned by the
+-- superuser that ran it. CREATE OR REPLACE requires ownership, so GoTrue dies
+-- with "must be owner of function uid (SQLSTATE 42501)" and NSSM restart-loops
+-- it forever - no login, and an auth service that never comes up.
+--
+-- Handing supabase_auth_admin ownership lets its migrations complete. It does
+-- NOT leave GoTrue's (broken, per-claim-GUC) auth.uid() in place: provisioning
+-- applies 0033 AFTER GoTrue has migrated, and the superuser can replace a
+-- function regardless of who owns it. See provision.ps1, "why 0033 comes last".
+do $$
+declare r record;
+begin
+  for r in
+    select p.oid::regprocedure as sig
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'auth'
+  loop
+    execute format('alter function %s owner to supabase_auth_admin', r.sig);
+  end loop;
+end $$;
+
+grant create, usage on schema auth to supabase_auth_admin;
