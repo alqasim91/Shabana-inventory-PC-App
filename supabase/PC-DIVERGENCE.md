@@ -31,9 +31,9 @@ Those are created by Supabase's `storage-api` service, which the PC edition does
 not ship, and `platform-bootstrap.sql` does not create them either. The prelude
 provides a schema-compatible shim.
 
-> **Attachments are not functional on PC.** The shim exists so the migrations
-> apply and the org-isolation policies stay enforceable. Nothing in the PC
-> edition uploads or serves file bytes yet — that needs a local file store.
+> The shim exists so the migrations apply and the org-isolation policies stay
+> enforceable. Nothing reads or writes through it: attachments are handled by
+> `0034_pc_local_storage.sql` instead — see below.
 
 ---
 
@@ -58,7 +58,27 @@ tenant provisioned from empty. Worth fixing there too — not done from this rep
 
 ---
 
-## PC-only migration
+## PC-only migrations
+
+### `0034_pc_local_storage.sql`
+Attachment **bytes** live in Postgres (`pc_file_bytes`), reached through
+`pc_file_put` / `pc_file_get` / `pc_file_delete`, because the PC edition ships
+no storage service. `order_attachments` remains the single source of metadata;
+this table holds content only, keyed by the same `storage_path`.
+
+Access is checked against the attachment **row**, not a path prefix, so knowing
+a path proves nothing — stricter than the cloud's bucket policy. Uploads are
+still required to sit under the caller's org folder so paths keep the same
+shape across editions.
+
+`frontend/src/services/attachments.ts` is the matching client change: same
+exported surface as the cloud version, so `AttachmentsPanel` and everything
+above it is untouched. Previews come back as object URLs rather than signed
+URLs, cached per path so repeated renders neither refetch nor leak blobs.
+
+One real consequence: attachments are inside `pg_dump`, so a backup file is
+genuinely the whole shop — and database size now grows with scans and photos.
+The 10 MB per-file ceiling from `0022` is enforced in `pc_file_put`.
 
 ### `0033_pc_local_auth.sql`
 Exists only here. Replaces the cloud Edge Functions (no Deno runtime on a shop

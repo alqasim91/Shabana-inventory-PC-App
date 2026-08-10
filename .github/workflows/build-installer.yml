@@ -212,7 +212,10 @@ jobs:
       # data, placeholder tokens consumed on first patch, `2>` promoting a
       # native command's stderr to a terminating error) would have been caught
       # right here instead of on the shop's PC.
-      - name: Smoke test - provision and drive the stack
+      # Run the ENTIRE install on the runner - real Windows, admin, real
+      # services - then drive the result the way a customer does. Every failure
+      # this project shipped to a customer would have been caught here.
+      - name: Smoke test - provision
         shell: pwsh
         env:
           SHABANA_NONINTERACTIVE: '1'
@@ -228,15 +231,14 @@ jobs:
           }
 
           & (Join-Path $root 'installer\scripts\provision.ps1') -InstallDir $root
-          if ($LASTEXITCODE -ne 0) { throw "provision.ps1 exited $LASTEXITCODE" }
 
           $port = (Get-Content (Join-Path $root 'config\http-port.txt') -Raw).Trim()
           $anon = (Get-Content (Join-Path $root 'config\anon.key') -Raw).Trim()
           $base = "http://localhost:$port"
           $hdr  = @{ apikey = $anon; Authorization = "Bearer $anon"; 'Content-Type' = 'application/json' }
 
-          # GoTrue runs its own migrations on first start; give it a moment
-          # before expecting the auth endpoint to answer.
+          # GoTrue runs its own migrations on first start; wait for it before
+          # expecting the auth endpoint to answer.
           $authUp = $false
           for ($i = 0; $i -lt 30; $i++) {
             try { Invoke-WebRequest "$base/auth/v1/health" -UseBasicParsing -TimeoutSec 3 | Out-Null; $authUp = $true; break }
@@ -244,47 +246,88 @@ jobs:
           }
           if (-not $authUp) { throw 'GoTrue never came up on /auth/v1/health' }
 
-          # 1. Fresh install must report that it needs setup. Retried, because
-          #    PostgREST may still be reloading its schema cache.
+          # A fresh install must report that it needs setup. Retried, because
+          # PostgREST may still be reloading its schema cache.
           $needs = $null
           for ($i = 0; $i -lt 15; $i++) {
             try { $needs = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_needs_setup" -Headers $hdr -Body '{}'; break }
             catch { Start-Sleep -Seconds 2 }
           }
           if ($needs -ne $true) { throw "pc_needs_setup returned '$needs', expected true on a fresh install" }
+          Write-Host "Provisioned and unclaimed at $base"
+          "SHABANA_URL=$base" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
 
-          # 2. Claim the install, exactly as the first-run screen does.
-          $body = @{
-            p_business_name  = 'Smoke Test Co'
-            p_admin_fullname = 'Smoke Admin'
-            p_admin_username = 'admin'
-            p_admin_password = 'smoke-test-password'
-            p_site_name      = 'Main Branch'
-          } | ConvertTo-Json
-          $boot = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_first_run_bootstrap" -Headers $hdr -Body $body
-          if (-not $boot.ok) { throw "pc_first_run_bootstrap failed: $($boot | ConvertTo-Json -Compress)" }
+      # The API test above proves the STACK. This proves the thing a customer
+      # actually touches: a real browser through first-run setup and login, in
+      # Arabic, on the install provisioned a moment ago.
+      - name: Smoke test - UI
+        shell: bash
+        working-directory: pc-app/tests/ui-smoke
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install chromium
+          npx playwright test
 
-          # 3. Log in through GoTrue with the account it just minted.
+      # Now that the browser has claimed the install, verify the rest of the
+      # contract over the API - including the local file storage that replaces
+      # Supabase Storage on a PC.
+      - name: Smoke test - API after setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'C:\ProgramData\ShabanaSmoke'
+          $port = (Get-Content (Join-Path $root 'config\http-port.txt') -Raw).Trim()
+          $anon = (Get-Content (Join-Path $root 'config\anon.key') -Raw).Trim()
+          $base = "http://localhost:$port"
+          $hdr  = @{ apikey = $anon; Authorization = "Bearer $anon"; 'Content-Type' = 'application/json' }
+
+          # 1. Claimed installs say so, and refuse to be claimed again.
+          $needs = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_needs_setup" -Headers $hdr -Body '{}'
+          if ($needs -ne $false) { throw "pc_needs_setup returned '$needs' after setup, expected false" }
+
+          $again = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_first_run_bootstrap" -Headers $hdr `
+            -Body (@{ p_business_name='X'; p_admin_fullname='Y'; p_admin_username='z'; p_admin_password='password-456'; p_site_name='S' } | ConvertTo-Json)
+          if ($again.ok) { throw 'Second bootstrap succeeded - the one-shot guard is broken' }
+
+          # 2. Log in through GoTrue with the account the BROWSER created.
           $login = Invoke-RestMethod -Method Post -Uri "$base/auth/v1/token?grant_type=password" `
-            -Headers $hdr -Body (@{ email = 'admin@shabana.local'; password = 'smoke-test-password' } | ConvertTo-Json)
+            -Headers $hdr -Body (@{ email = 'admin@shabana.local'; password = 'ui-smoke-password' } | ConvertTo-Json)
           if (-not $login.access_token) { throw 'Login returned no access_token' }
+          $auth = @{ apikey = $anon; Authorization = "Bearer $($login.access_token)"; 'Content-Type' = 'application/json' }
 
-          # 4. Read real data with that token. This is the end-to-end proof:
+          # 3. Read real data through RLS. This single call only succeeds if
           #    Caddy routing, PostgREST, the JWT, auth.uid() reading the JSON
-          #    claims GUC, and the org-scoped RLS policies all have to be right
-          #    for this single call to return a row.
-          $auth = @{ apikey = $anon; Authorization = "Bearer $($login.access_token)" }
+          #    claims GUC, and the org-scoped policies are ALL correct.
           $sites = Invoke-RestMethod -Uri "$base/rest/v1/sites?select=name_ar" -Headers $auth
           if ($sites.Count -lt 1) { throw 'Authenticated read of sites returned nothing - RLS or auth.uid() is wrong' }
 
-          # 5. And it must refuse to be claimed twice.
-          $again = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_first_run_bootstrap" -Headers $hdr -Body $body
-          if ($again.ok) { throw 'Second bootstrap succeeded - the one-shot guard is broken' }
+          # 4. Local file storage (migration 0034), which replaces Supabase
+          #    Storage on a PC. Write bytes, prove the read is gated on an
+          #    attachment row rather than on knowing the path, then delete.
+          $org = (Invoke-RestMethod -Uri "$base/rest/v1/organization?select=id" -Headers $auth)[0].id
+          $path = "$org/test/smoke/hello.txt"
+          $b64  = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('shabana smoke test'))
+          $put = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_file_put" -Headers $auth `
+            -Body (@{ p_path=$path; p_mime='text/plain'; p_b64=$b64 } | ConvertTo-Json)
+          if (-not $put.ok) { throw "pc_file_put failed: $($put | ConvertTo-Json -Compress)" }
 
-          Write-Host "SMOKE TEST PASSED - provisioned, claimed, logged in, read site '$($sites[0].name_ar)'."
+          # No order_attachments row points at this path, so the read must come
+          # back empty even though the bytes exist and we know the path.
+          $get = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_file_get" -Headers $auth `
+            -Body (@{ p_path=$path } | ConvertTo-Json)
+          if ($get) { throw 'pc_file_get returned bytes for a path with no attachment row - the authority check is broken' }
 
-      # The smoke test drives the stack over HTTP, so when a call fails all we
-      # see is the HTTP error. The reason is in the service logs.
+          $del = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_file_delete" -Headers $auth `
+            -Body (@{ p_path=$path } | ConvertTo-Json)
+          if (-not $del.ok) { throw "pc_file_delete failed: $($del | ConvertTo-Json -Compress)" }
+
+          # 5. A path outside the caller's org must be refused outright.
+          $bad = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_file_put" -Headers $auth `
+            -Body (@{ p_path='00000000-0000-0000-0000-000000000000/x.txt'; p_mime='text/plain'; p_b64=$b64 } | ConvertTo-Json)
+          if ($bad.ok) { throw 'pc_file_put accepted a path outside the caller org' }
+
+          Write-Host "SMOKE TEST PASSED - provisioned, claimed via the UI, logged in, read site '$($sites[0].name_ar)', file storage enforced."
+
       - name: Smoke test logs
         if: failure()
         shell: pwsh

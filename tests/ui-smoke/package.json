@@ -1,0 +1,8 @@
+{
+  "name": "shabana-ui-smoke",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}
