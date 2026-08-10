@@ -393,4 +393,19 @@ if ($ok) {
     Write-Host '============================================================'
 }
 
+# Take one backup right now, rather than leaving the first restore point until
+# 3am tomorrow. A shop that loses its disk on day one currently loses
+# everything it entered on day one; this makes that window minutes instead of
+# hours. It also creates public\last-backup.json, which the dashboard badge
+# fetches - without it every page load logs a 404 until the nightly job first
+# runs. Best effort: a shop with a working database and no backup yet is still
+# a successful install, so a failure here is reported, not fatal.
+Write-Host 'Taking an initial backup...'
+try {
+    & (Join-Path $PSScriptRoot 'backup.ps1') -InstallDir $InstallDir
+} catch {
+    Write-Host "Initial backup did not run: $($_.Exception.Message)"
+    Write-Host '(The nightly job is still scheduled; this is not fatal.)'
+}
+
 Write-Host 'Provisioning complete.'

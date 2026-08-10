@@ -145,7 +145,12 @@ test('first run: setup, then log in', async ({ page }) => {
   // Ignore the noise every app produces (favicon 404s, dev warnings); fail on
   // anything that looks like a real fault.
   const real = consoleErrors.filter(
-    (e) => !/favicon|manifest|sourcemap|DevTools/i.test(e),
+    // last-backup.json is deliberately absent until a backup has run - the
+    // dashboard badge treats a failed fetch as "nothing to report" and renders
+    // nothing. Provisioning now takes an initial backup so this should not
+    // appear, but it stays whitelisted because its absence is a designed
+    // state, not a fault.
+    (e) => !/favicon|manifest|sourcemap|DevTools|last-backup/i.test(e),
   );
   expect(real, `console errors:\n${real.join('\n')}`).toHaveLength(0);
 });
