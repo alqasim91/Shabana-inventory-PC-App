@@ -61,7 +61,22 @@ try {
         }
     }
 
-    # 4. Service state.
+    # 4. Ports: the ones we chose, plus the ranges Windows has RESERVED.
+    #    Hyper-V/WSL/Docker reserve blocks of TCP ports, and binding one fails
+    #    with "Permission denied" even though nothing is listening - the single
+    #    most confusing failure mode this stack has, and invisible without
+    #    netsh. Port numbers are not secrets, so both are safe to include.
+    $portInfo = @()
+    foreach ($pf in @('http-port.txt', 'pg-port.txt')) {
+        $full = Join-Path $configDir $pf
+        $portInfo += if (Test-Path $full) { "$pf = $((Get-Content $full -Raw).Trim())" } else { "$pf = (missing)" }
+    }
+    $portInfo += ''
+    $portInfo += '--- Windows reserved TCP port ranges ---'
+    $portInfo += (& netsh int ipv4 show excludedportrange protocol=tcp 2>&1 | Out-String)
+    $portInfo | Out-File -FilePath (Join-Path $staging 'ports.txt') -Encoding UTF8
+
+    # 5. Service state.
     Get-Service -Name 'Shabana*' -ErrorAction SilentlyContinue |
         Select-Object Name, Status, StartType |
         Format-Table -AutoSize |

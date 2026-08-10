@@ -109,7 +109,13 @@ function Get-BindablePort {
     # listening. Postgres hit exactly this on 5432. TcpListener.Start()
     # throws for both in-use AND reserved ports, so a successful Start/Stop
     # is proof the real service can bind it too.
-    param([int]$Preferred, [int[]]$Exclude = @())
+    #
+    # -Any probes 0.0.0.0 instead of 127.0.0.1. Use it for a port the real
+    # service binds on ALL interfaces (Caddy's `:8000`): a port can be free on
+    # loopback yet reserved/occupied on another interface, so probing loopback
+    # for an all-interfaces listener would pass here and still fail at runtime.
+    param([int]$Preferred, [int[]]$Exclude = @(), [switch]$Any)
+    $addr = if ($Any) { [System.Net.IPAddress]::Any } else { [System.Net.IPAddress]::Loopback }
     $candidates = @($Preferred)
     $candidates += ($Preferred + 1)..($Preferred + 40)   # near the preferred first (nicer logs)
     $candidates += 55100..55400                            # then a high fallback block
@@ -117,7 +123,7 @@ function Get-BindablePort {
         if ($p -lt 1 -or $p -gt 65535 -or ($Exclude -contains $p)) { continue }
         $listener = $null
         try {
-            $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback, $p)
+            $listener = New-Object System.Net.Sockets.TcpListener ($addr, $p)
             $listener.Start()
             $listener.Stop()
             return $p
@@ -157,15 +163,26 @@ if (Test-Path $dbPasswordFile2) {
 $anonKey        = New-SupabaseJwt -Secret $jwtSecret -Role 'anon'
 $serviceRoleKey = New-SupabaseJwt -Secret $jwtSecret -Role 'service_role'
 
-# HTTP_PORT is FIXED at 8000: it's the only user-facing port (the desktop
-# shortcut and the anon URL baked into the frontend both point at it), so it
-# can't be chosen dynamically without also rewriting those. The three
-# INTERNAL ports are probed for real bindability, because a Windows reserved
-# range (Hyper-V/WSL/Docker) can make the preferred one unbindable - which is
-# exactly what killed Postgres on 5432. Each is excluded from the next so
-# they can't collide.
-$httpPort = 8000
-$pgPortFile = Join-Path (Join-Path $InstallDir 'config') 'pg-port.txt'
+# EVERY port is probed for real bindability, including the user-facing HTTP
+# one. A Windows reserved range (Hyper-V/WSL/Docker `netsh excludedportrange`)
+# can make a port unbindable even with nothing listening on it - that is what
+# killed Postgres on 5432, and 8000 sits in a block those same products
+# commonly reserve. HTTP_PORT was hardcoded at 8000 precisely because the
+# desktop shortcut and the frontend's baked-in API URL point at it; both are
+# now derived from whatever port we land on (the shortcut is written by
+# provision.ps1 after this script runs, and the frontend is patched below),
+# so nothing depends on the literal 8000 any more.
+# Each port is excluded from the next so they can't collide.
+$configDirEarly = Join-Path $InstallDir 'config'
+$httpPortFile = Join-Path $configDirEarly 'http-port.txt'
+if (Test-Path $httpPortFile) {
+    # Reuse across re-provisions: the shortcut on the customer's desktop and
+    # any bookmark they've made point at the previous choice.
+    $httpPort = [int]((Get-Content $httpPortFile -Raw).Trim())
+} else {
+    $httpPort = Get-BindablePort -Preferred 8000 -Any
+}
+$pgPortFile = Join-Path $configDirEarly 'pg-port.txt'
 if (Test-Path $pgPortFile) {
     # Reuse the port a previous provision already baked into postgresql.conf,
     # so a reinstall/re-provision stays consistent with the existing data dir
@@ -235,6 +252,10 @@ Set-Content -Path (Join-Path $configDir 'jwt-secret.key') -Value $jwtSecret -NoN
 # restore, migrate, reset-admin, export-report) connects to the right place
 # when it isn't the default 5432. ASCII, no BOM.
 Set-Content -Path (Join-Path $configDir 'pg-port.txt') -Value ([string]$pgPort) -NoNewline -Encoding ASCII
+
+# The chosen HTTP port, so provision.ps1 can write the desktop shortcut to the
+# right URL and the health check knows what to probe. ASCII, no BOM.
+Set-Content -Path (Join-Path $configDir 'http-port.txt') -Value ([string]$httpPort) -NoNewline -Encoding ASCII
 
 Write-Host "Secrets generated and config files written to $configDir"
 Write-Host "JWT secret and DB password are unique to this machine - do not copy config\ between installs."

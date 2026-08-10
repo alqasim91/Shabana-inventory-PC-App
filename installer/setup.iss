@@ -53,7 +53,13 @@ Source: "payload\supabase\*"; DestDir: "{app}\supabase"; Flags: recursesubdirs i
 Source: "payload\installer\*"; DestDir: "{app}\installer"; Flags: recursesubdirs ignoreversion
 
 [Icons]
-Name: "{autodesktop}\{#MyAppName}"; Filename: "http://localhost:8000"
+; Points at a .url file written by provision.ps1, NOT at a literal
+; http://localhost:8000 - the HTTP port is probed for bindability at
+; provisioning time (a Windows reserved port range can make 8000
+; unbindable), so only provisioning knows the real address. Retargeting
+; that one file moves every shortcut at once.
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\Shabana.url"
+Name: "{autoprograms}\{#MyAppName}\{#MyAppName}"; Filename: "{app}\Shabana.url"
 Name: "{autoprograms}\{#MyAppName}\استعادة نسخة احتياطية"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\restore.ps1"" -InstallDir ""{app}"""
 Name: "{autoprograms}\{#MyAppName}\إعادة تعيين كلمة مرور المدير"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\reset-admin.ps1"" -InstallDir ""{app}"""
 Name: "{autoprograms}\{#MyAppName}\تصدير تقرير المشكلة"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\export-report.ps1"" -InstallDir ""{app}"""
@@ -67,7 +73,7 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Fil
 
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\backup.ps1"" -InstallDir ""{app}"" -Register"; StatusMsg: "جارٍ جدولة النسخ الاحتياطي..."; Flags: waituntilterminated
 
-Filename: "http://localhost:8000"; Description: "فتح البرنامج الآن"; Flags: postinstall shellexec skipifsilent
+Filename: "{app}\Shabana.url"; Description: "فتح البرنامج الآن"; Flags: postinstall shellexec skipifsilent
 
 [UninstallRun]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Stop-Service ShabanaCaddy,ShabanaGoTrue,ShabanaPostgREST,ShabanaPostgres -ErrorAction SilentlyContinue; & '{app}\bin\nssm\nssm.exe' remove ShabanaCaddy confirm; & '{app}\bin\nssm\nssm.exe' remove ShabanaGoTrue confirm; & '{app}\bin\nssm\nssm.exe' remove ShabanaPostgREST confirm; & '{app}\bin\pg\bin\pg_ctl.exe' unregister -N ShabanaPostgres; Unregister-ScheduledTask -TaskName ShabanaNightlyBackup -Confirm:$false -ErrorAction SilentlyContinue"""; Flags: runhidden
@@ -79,3 +85,4 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Com
 Type: filesandordirs; Name: "{app}\bin"
 Type: filesandordirs; Name: "{app}\www"
 Type: filesandordirs; Name: "{app}\logs"
+Type: files; Name: "{app}\Shabana.url"

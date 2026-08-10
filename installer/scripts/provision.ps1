@@ -165,4 +165,55 @@ finally {
 Write-Host 'Registering Windows services...'
 & (Join-Path $PSScriptRoot 'register-services.ps1') -InstallDir $InstallDir
 
+# --- Shortcut target -------------------------------------------------------
+# The Start Menu / desktop shortcuts setup.iss creates point at THIS file
+# rather than at a literal URL, because the HTTP port is chosen at
+# provisioning time (see generate-secrets.ps1) and setup.iss has no way to
+# know it. Rewriting the .url here retargets every shortcut at once.
+$httpPort = (Get-Content (Join-Path $configDir 'http-port.txt') -Raw).Trim()
+$appUrl = "http://localhost:$httpPort"
+Set-Content -Path (Join-Path $InstallDir 'Shabana.url') -Encoding ASCII -Value @"
+[InternetShortcut]
+URL=$appUrl
+"@
+
+# --- Health check ----------------------------------------------------------
+# NSSM reports a service as "started" as soon as the process launches, even
+# if that process exits immediately - so Start-Service succeeding proves
+# nothing. The only real evidence the stack is up is an HTTP response on the
+# port the customer is about to open. Check it here, while the installer
+# window is still on screen and the logs are one line away.
+Write-Host ''
+Write-Host "Checking that the application is responding on $appUrl ..."
+$ok = $false
+for ($i = 0; $i -lt 20; $i++) {
+    try {
+        $resp = Invoke-WebRequest -Uri $appUrl -UseBasicParsing -TimeoutSec 3
+        if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 500) { $ok = $true; break }
+    } catch { }
+    Start-Sleep -Seconds 2
+}
+
+if ($ok) {
+    Write-Host ''
+    Write-Host "SUCCESS: Shabana Inventory is running at $appUrl"
+} else {
+    # Not a `throw`: aborting here would roll the installer back and take the
+    # logs with it. Print everything needed to diagnose instead, and let the
+    # install finish so the customer can send us the log folder.
+    Write-Host ''
+    Write-Host '============================================================'
+    Write-Host "PROBLEM: nothing answered on $appUrl after 40 seconds."
+    Write-Host 'Service state:'
+    Get-Service -Name 'ShabanaPostgres', 'ShabanaPostgREST', 'ShabanaGoTrue', 'ShabanaCaddy' -ErrorAction SilentlyContinue |
+        Format-Table Name, Status -AutoSize | Out-String | Write-Host
+    foreach ($log in @('caddy.log', 'postgrest.log', 'gotrue.log', 'pg-provision.log')) {
+        $path = Join-Path $logsDir $log
+        Write-Host "--- last 15 lines of $log ---"
+        if (Test-Path $path) { Get-Content $path -Tail 15 | Write-Host } else { Write-Host '(not created)' }
+    }
+    Write-Host "Full logs: $logsDir"
+    Write-Host '============================================================'
+}
+
 Write-Host 'Provisioning complete.'
