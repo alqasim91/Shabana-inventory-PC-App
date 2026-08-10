@@ -28,7 +28,14 @@ function Install-NssmService {
     param(
         [string]$Name,
         [string]$Exe,
-        [string]$Args,
+        # NOT named $Args: that is a PowerShell AUTOMATIC variable (the
+        # function's own argument array). A parameter of that name is shadowed
+        # by it, so this always resolved to empty and EVERY service was
+        # registered with no command line at all - Caddy printed its help text
+        # and exited, PostgREST ran with no config file and threw, and GoTrue
+        # only survived because it takes no arguments and reads its
+        # configuration from the environment.
+        [string]$Arguments,
         [string]$WorkingDir,
         [string]$LogFile
     )
@@ -54,12 +61,20 @@ function Install-NssmService {
         # round trip.
         & $nssm install $Name $Exe | Out-Null
     }
-    & $nssm set $Name AppParameters $Args | Out-Null
+    & $nssm set $Name AppParameters $Arguments | Out-Null
     # Read it back. If the arguments ever get mangled again, this line says so
     # in the provisioning window instead of leaving a service that silently
     # runs the wrong command.
-    $stored = (& $nssm get $Name AppParameters) -join ' '
-    Write-Host ("  {0} args: {1}" -f $Name, ($stored -replace '\0', '').Trim())
+    # Read it back and PROVE it stuck. nssm emits UTF-16, which PowerShell
+    # surfaces with NULs between the characters, so strip those before
+    # comparing. A service registered with the wrong command line otherwise
+    # fails in a way that looks nothing like its cause - Caddy printing its
+    # help text into a log nobody reads.
+    $stored = (((& $nssm get $Name AppParameters) -join ' ') -replace "`0", '').Trim()
+    Write-Host ("  {0} args: {1}" -f $Name, $(if ($stored) { $stored } else { '(none)' }))
+    if ($Arguments -and -not $stored) {
+        throw "nssm did not store a command line for $Name (expected '$Arguments'). The service would run with no arguments."
+    }
     & $nssm set $Name AppDirectory $WorkingDir | Out-Null
     & $nssm set $Name AppStdout $LogFile | Out-Null
     & $nssm set $Name AppStderr $LogFile | Out-Null
@@ -100,13 +115,13 @@ Set-Service -Name 'ShabanaPostgres' -StartupType Automatic
 
 Install-NssmService -Name 'ShabanaPostgREST' `
     -Exe (Join-Path $InstallDir 'bin\postgrest\postgrest.exe') `
-    -Args (Join-Path $configDir 'postgrest.conf') `
+    -Arguments (Join-Path $configDir 'postgrest.conf') `
     -WorkingDir (Join-Path $InstallDir 'bin\postgrest') `
     -LogFile (Join-Path $logsDir 'postgrest.log')
 
 Install-NssmService -Name 'ShabanaGoTrue' `
     -Exe (Join-Path $InstallDir 'bin\gotrue\gotrue.exe') `
-    -Args '' `
+    -Arguments '' `
     -WorkingDir (Join-Path $InstallDir 'bin\gotrue') `
     -LogFile (Join-Path $logsDir 'gotrue.log')
 # GoTrue reads its config from env vars. NSSM's AppEnvironmentExtra wants each
@@ -140,7 +155,7 @@ Write-Host 'Caddy configuration validated.'
 
 Install-NssmService -Name 'ShabanaCaddy' `
     -Exe (Join-Path $InstallDir 'bin\caddy\caddy.exe') `
-    -Args "run --config $configDir\Caddyfile --adapter caddyfile" `
+    -Arguments "run --config $configDir\Caddyfile --adapter caddyfile" `
     -WorkingDir (Join-Path $InstallDir 'bin\caddy') `
     -LogFile (Join-Path $logsDir 'caddy.log')
 
