@@ -244,8 +244,13 @@ jobs:
           }
           if (-not $authUp) { throw 'GoTrue never came up on /auth/v1/health' }
 
-          # 1. Fresh install must report that it needs setup.
-          $needs = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_needs_setup" -Headers $hdr -Body '{}'
+          # 1. Fresh install must report that it needs setup. Retried, because
+          #    PostgREST may still be reloading its schema cache.
+          $needs = $null
+          for ($i = 0; $i -lt 15; $i++) {
+            try { $needs = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_needs_setup" -Headers $hdr -Body '{}'; break }
+            catch { Start-Sleep -Seconds 2 }
+          }
           if ($needs -ne $true) { throw "pc_needs_setup returned '$needs', expected true on a fresh install" }
 
           # 2. Claim the install, exactly as the first-run screen does.

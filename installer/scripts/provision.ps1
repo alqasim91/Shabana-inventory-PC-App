@@ -318,6 +318,18 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Migration failed: $($_.Name)" }
         & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "insert into shabana_migrations (filename) values ('$($_.Name)') on conflict do nothing;"
     }
+
+    # PostgREST builds its schema cache once, at startup - and it started
+    # BEFORE 0033 ran, so it has never seen pc_needs_setup or
+    # pc_first_run_bootstrap. Calling them returns PGRST202 "could not find the
+    # function in the schema cache", which reads like the migration failed when
+    # it applied perfectly. NOTIFY is the documented way to make it re-read;
+    # the restart afterwards is belt and braces, since a stack that cannot
+    # answer its own setup call is not worth leaving to chance.
+    Write-Host 'Refreshing the PostgREST schema cache...'
+    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "notify pgrst, 'reload schema';" | Out-Null
+    Restart-Service -Name 'ShabanaPostgREST' -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3
 }
 finally {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
