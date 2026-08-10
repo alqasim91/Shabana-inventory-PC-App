@@ -220,13 +220,15 @@ Set-FromTemplate -TemplatePath (Join-Path $templateDir 'postgrest.conf.template'
 # patch-frontend-config.ps1 for why this exists instead of a runtime-fetch
 # endpoint or an edit to the frontend's source repo.
 $wwwDir = Join-Path $InstallDir 'www'
-if (Test-Path $wwwDir) {
+$wwwSrcDir = Join-Path $InstallDir 'www-src'
+if (Test-Path $wwwSrcDir) {
     & (Join-Path $PSScriptRoot 'patch-frontend-config.ps1') `
+        -SourceDir $wwwSrcDir `
         -WwwDir $wwwDir `
         -SupabaseUrl "http://localhost:$($ports.HTTP_PORT)" `
         -AnonKey $anonKey
 } else {
-    Write-Warning "www\ not found under $InstallDir - skipping frontend patch (expected during provisioning before [Files] copies it; not expected otherwise)."
+    Write-Warning "www-src\ not found under $InstallDir - skipping frontend patch (expected during provisioning before [Files] copies it; not expected otherwise)."
 }
 
 # service_role key is not embedded in any served file (it must never reach

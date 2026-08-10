@@ -33,12 +33,30 @@
 
 [CmdletBinding()]
 param(
+    # The PRISTINE build shipped by the installer, still carrying the
+    # placeholder tokens. Read-only: never patched, never served.
+    [Parameter(Mandatory = $true)][string]$SourceDir,
+    # The directory Caddy serves. Regenerated from $SourceDir on every run.
     [Parameter(Mandatory = $true)][string]$WwwDir,
     [Parameter(Mandatory = $true)][string]$SupabaseUrl,
     [Parameter(Mandatory = $true)][string]$AnonKey
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Regenerate the served copy from the pristine one FIRST. This is what makes
+# the script re-runnable: patching consumes the placeholder tokens, so a
+# script that patched the served copy in place worked exactly once and then
+# failed forever after with "placeholder tokens not found" - including on a
+# re-provision, a repair install, or an upgrade. Starting from the untouched
+# source every time means the tokens are always there to replace, and the
+# served copy always matches the shipped build plus this machine's values.
+if (-not (Test-Path $SourceDir)) {
+    throw "Pristine frontend not found at $SourceDir - the installer did not lay down www-src\."
+}
+if (Test-Path $WwwDir) { Remove-Item -Path $WwwDir -Recurse -Force }
+New-Item -ItemType Directory -Path $WwwDir -Force | Out-Null
+Copy-Item -Path (Join-Path $SourceDir '*') -Destination $WwwDir -Recurse -Force
 
 # Must match the placeholder values passed as VITE_SUPABASE_URL /
 # VITE_SUPABASE_ANON_KEY in .github/workflows/build-installer.yml's
@@ -80,9 +98,10 @@ foreach ($file in $targets) {
 }
 
 if ($patchedUrl -eq 0 -or $patchedKey -eq 0) {
-    throw "Placeholder tokens not found in built frontend (url matches: $patchedUrl, key matches: $patchedKey). " +
-          "Either the frontend wasn't built with the placeholder env vars, or the tokens have drifted out of sync " +
-          "with .github/workflows/build-installer.yml. Refusing to continue with an unpatched frontend."
+    throw "Placeholder tokens not found in the pristine frontend at $SourceDir (url matches: $patchedUrl, " +
+          "key matches: $patchedKey). Either the frontend wasn't built with the placeholder env vars, or the " +
+          "tokens have drifted out of sync with .github/workflows/build-installer.yml. Refusing to continue " +
+          "with an unpatched frontend."
 }
 
 Write-Host "Frontend config patched: URL in $patchedUrl file(s), anon key in $patchedKey file(s)."

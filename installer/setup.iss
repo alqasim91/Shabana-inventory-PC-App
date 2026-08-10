@@ -48,7 +48,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "payload\bin\*"; DestDir: "{app}\bin"; Flags: recursesubdirs ignoreversion
-Source: "payload\www\*"; DestDir: "{app}\www"; Flags: recursesubdirs ignoreversion
+; The PRISTINE frontend, still carrying the placeholder tokens. It is never
+; served and never edited. provision.ps1 regenerates {app}\www from it on
+; every run, patching in this machine's URL and anon key. Patching a served
+; copy in place (what we used to do) consumed the tokens, so provisioning
+; could only ever succeed once and any re-run failed with "tokens not found".
+Source: "payload\www-src\*"; DestDir: "{app}\www-src"; Flags: recursesubdirs ignoreversion
 Source: "payload\supabase\*"; DestDir: "{app}\supabase"; Flags: recursesubdirs ignoreversion
 Source: "payload\installer\*"; DestDir: "{app}\installer"; Flags: recursesubdirs ignoreversion
 ; Placeholder target for the shortcuts below; provision.ps1 rewrites it with
@@ -87,5 +92,6 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Com
 ; history. The uninstaller only removes services + program files.
 Type: filesandordirs; Name: "{app}\bin"
 Type: filesandordirs; Name: "{app}\www"
+Type: filesandordirs; Name: "{app}\www-src"
 Type: filesandordirs; Name: "{app}\logs"
 Type: files; Name: "{app}\Shabana.url"

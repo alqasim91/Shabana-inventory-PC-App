@@ -57,7 +57,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path pc-app/installer/payload/bin/gotrue
           New-Item -ItemType Directory -Force -Path pc-app/installer/payload/bin/caddy
           New-Item -ItemType Directory -Force -Path pc-app/installer/payload/bin/nssm
-          New-Item -ItemType Directory -Force -Path pc-app/installer/payload/www
+          New-Item -ItemType Directory -Force -Path pc-app/installer/payload/www-src
           New-Item -ItemType Directory -Force -Path pc-app/installer/payload/supabase
           New-Item -ItemType Directory -Force -Path pc-app/installer/payload/installer
 
@@ -155,7 +155,17 @@ jobs:
           cd pc-app/frontend
           npm ci
           npm run build
-          cp -r dist/* ../installer/payload/www/
+          cp -r dist/* ../installer/payload/www-src/
+          # Fail the BUILD if the placeholders didn't make it into the bundle.
+          # Without this the breakage only shows up on a customer's machine, as
+          # an install that refuses to provision.
+          for tok in __SHABANA_RUNTIME_SUPABASE_URL__ __SHABANA_RUNTIME_ANON_KEY__; do
+            if ! grep -rq "$tok" ../installer/payload/www-src/; then
+              echo "Placeholder $tok missing from the built frontend."
+              exit 1
+            fi
+          done
+          echo 'Both placeholder tokens present in the built frontend.'
 
       - name: Copy migrations + installer scripts into payload
         shell: pwsh

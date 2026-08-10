@@ -66,6 +66,12 @@ foreach ($dir in @($dataDir, $configDir, $logsDir, (Join-Path $InstallDir 'backu
 # password for the superuser, or a separate ALTER ROLE step that's easy to
 # forget. See BUILD_PLAN.md item #1.
 
+# Stop anything still running from a previous install before touching its
+# files. Provisioning rewrites config\, regenerates www\ from www-src\, and may
+# move data\pg aside - all of which the running services hold open, and on
+# Windows an open handle makes a delete or rename fail outright.
+Stop-Service -Name 'ShabanaCaddy', 'ShabanaGoTrue', 'ShabanaPostgREST' -ErrorAction SilentlyContinue
+
 Write-Host 'Generating per-machine secrets and config...'
 & (Join-Path $PSScriptRoot 'generate-secrets.ps1') -InstallDir $InstallDir
 
