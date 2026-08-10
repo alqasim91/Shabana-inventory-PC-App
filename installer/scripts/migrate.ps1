@@ -30,6 +30,8 @@ $ErrorActionPreference = 'Stop'
 $pgBin = Join-Path $InstallDir 'bin\pg\bin'
 $migrationsDir = Join-Path $PSScriptRoot '..\..\supabase\migrations'
 $dbPassword = Get-Content (Join-Path $InstallDir 'config\db-password.key') -Raw
+$pgPortFile = Join-Path $InstallDir 'config\pg-port.txt'
+$pgPort = if (Test-Path $pgPortFile) { (Get-Content $pgPortFile -Raw).Trim() } else { '5432' }
 $psql = Join-Path $pgBin 'psql.exe'
 
 $env:PGPASSWORD = $dbPassword
@@ -39,7 +41,7 @@ $env:PGPASSWORD = $dbPassword
 $env:PGCLIENTENCODING = 'UTF8'
 
 function Get-AppliedMigrations {
-    $rows = & $psql -U postgres -h 127.0.0.1 -d postgres -t -A -c "select filename from shabana_migrations order by filename;"
+    $rows = & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -t -A -c "select filename from shabana_migrations order by filename;"
     if ($LASTEXITCODE -ne 0) { throw "Could not read shabana_migrations - is the database reachable?" }
     return @($rows -split "`n" | Where-Object { $_.Trim() -ne '' })
 }
@@ -70,13 +72,13 @@ try {
     $failed = $false
     foreach ($file in $pending) {
         Write-Host "Applying $($file.Name)..."
-        & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -f $file.FullName
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $file.FullName
         if ($LASTEXITCODE -ne 0) {
             Write-Host "MIGRATION FAILED: $($file.Name)"
             $failed = $true
             break
         }
-        & $psql -U postgres -h 127.0.0.1 -d postgres -c "insert into shabana_migrations (filename) values ('$($file.Name)');"
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "insert into shabana_migrations (filename) values ('$($file.Name)');"
     }
 
     if ($failed) {

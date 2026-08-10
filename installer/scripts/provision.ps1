@@ -51,6 +51,9 @@ Write-Host 'Generating per-machine secrets and config...'
 & (Join-Path $PSScriptRoot 'generate-secrets.ps1') -InstallDir $InstallDir
 
 $dbPasswordFile = Join-Path $configDir 'db-password.key'
+# The Postgres port generate-secrets chose (5432 unless it was in a Windows
+# reserved range). postgresql.conf and every psql call below must use it.
+$pgPort = (Get-Content (Join-Path $configDir 'pg-port.txt') -Raw).Trim()
 
 # --- initdb -------------------------------------------------------------
 # Fixed UTF8/C locale and explicit Cairo timezone at creation time - see
@@ -67,15 +70,28 @@ if (-not (Test-Path (Join-Path $dataDir 'PG_VERSION'))) {
         --auth=scram-sha-256 `
         --pwfile=$dbPasswordFile
     if ($LASTEXITCODE -ne 0) { throw 'initdb failed' }
+} else {
+    Write-Host 'Data directory already initialized, skipping initdb.'
+}
 
-    Add-Content -Path (Join-Path $dataDir 'postgresql.conf') -Value @"
+# Apply our Postgres settings ALWAYS (not only right after initdb): a data
+# dir left behind by a failed earlier install already has PG_VERSION, so
+# gating this on initdb would skip it and Postgres would keep trying the old
+# (unbindable) port. Append the block only if there's no active `port =`
+# line yet, so re-provisioning doesn't stack duplicates. Postgres uses the
+# last value of any setting, so a stray duplicate would be harmless anyway.
+$pgConf = Join-Path $dataDir 'postgresql.conf'
+if (-not (Select-String -Path $pgConf -Pattern '^\s*port\s*=' -Quiet)) {
+    Add-Content -Path $pgConf -Value @"
 
 # --- Shabana PC provisioning ---
 timezone = 'Africa/Cairo'
 listen_addresses = '127.0.0.1'
+port = $pgPort
 "@
+    Write-Host "Postgres configured on port $pgPort."
 } else {
-    Write-Host 'Data directory already initialized, skipping initdb.'
+    Write-Host "postgresql.conf already has a port setting; leaving it."
 }
 
 # --- Start Postgres temporarily to run bootstrap + migrations ----------
@@ -108,7 +124,7 @@ try {
         throw "platform-bootstrap.sql not found - see BUILD_PLAN.md. Provisioning cannot safely continue without it."
     }
     Write-Host 'Applying platform bootstrap...'
-    & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -f $bootstrapSql
+    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $bootstrapSql
     if ($LASTEXITCODE -ne 0) { throw 'Platform bootstrap failed' }
 
     # PostgREST connects as `authenticator`, GoTrue as `supabase_auth_admin`
@@ -120,22 +136,22 @@ try {
     # a separate secret per role.
     Write-Host 'Setting role passwords...'
     $escapedPw = $dbPassword.Replace("'", "''")
-    & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -c "alter role authenticator password '$escapedPw';"
-    & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_auth_admin password '$escapedPw';"
-    & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_storage_admin password '$escapedPw';"
+    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -c "alter role authenticator password '$escapedPw';"
+    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_auth_admin password '$escapedPw';"
+    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_storage_admin password '$escapedPw';"
     if ($LASTEXITCODE -ne 0) { throw 'Failed to set role passwords' }
 
     Write-Host 'Applying application migrations...'
     Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
         Write-Host "  -> $($_.Name)"
-        & $psql -U postgres -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -f $_.FullName
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $_.FullName
         if ($LASTEXITCODE -ne 0) { throw "Migration failed: $($_.Name)" }
     }
 
     # Record what's applied, for migrate.ps1 on future upgrades.
-    & $psql -U postgres -h 127.0.0.1 -d postgres -c "create table if not exists shabana_migrations (filename text primary key, applied_at timestamptz not null default now());"
+    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "create table if not exists shabana_migrations (filename text primary key, applied_at timestamptz not null default now());"
     Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
-        & $psql -U postgres -h 127.0.0.1 -d postgres -c "insert into shabana_migrations (filename) values ('$($_.Name)') on conflict do nothing;"
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "insert into shabana_migrations (filename) values ('$($_.Name)') on conflict do nothing;"
     }
 }
 finally {

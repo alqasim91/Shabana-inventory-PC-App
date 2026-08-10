@@ -101,20 +101,88 @@ function Set-FromTemplate {
     Set-Content -Path $OutPath -Value $content -NoNewline -Encoding ASCII
 }
 
-# --- Generate ---------------------------------------------------------
+function Get-BindablePort {
+    # Returns a port we can ACTUALLY bind on loopback, starting from
+    # $Preferred. This is not just "is it in use" - on Windows, Hyper-V /
+    # WSL2 / Docker reserve blocks of TCP ports (netsh excludedportrange),
+    # and binding one fails with "Permission denied" even though nothing is
+    # listening. Postgres hit exactly this on 5432. TcpListener.Start()
+    # throws for both in-use AND reserved ports, so a successful Start/Stop
+    # is proof the real service can bind it too.
+    param([int]$Preferred, [int[]]$Exclude = @())
+    $candidates = @($Preferred)
+    $candidates += ($Preferred + 1)..($Preferred + 40)   # near the preferred first (nicer logs)
+    $candidates += 55100..55400                            # then a high fallback block
+    foreach ($p in $candidates) {
+        if ($p -lt 1 -or $p -gt 65535 -or ($Exclude -contains $p)) { continue }
+        $listener = $null
+        try {
+            $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback, $p)
+            $listener.Start()
+            $listener.Stop()
+            return $p
+        } catch {
+            if ($listener) { try { $listener.Stop() } catch { } }
+            continue
+        }
+    }
+    throw "Could not find a bindable TCP port near $Preferred (all candidates in use or in a Windows reserved range)."
+}
 
-$jwtSecret  = New-RandomBase64Secret -ByteLength 40
-$dbPassword = New-RandomPassword -Length 32
+# --- Generate ---------------------------------------------------------
+# REUSE existing secrets on a re-provision. This is not just tidiness: the DB
+# superuser password is baked into the data dir by initdb and can only be
+# changed by connecting (which needs the current password). Since initdb is
+# skipped when a data dir already exists, minting a NEW password here would
+# leave provision unable to connect at all. Reusing the stored value keeps it
+# matched to the running data dir. The JWT secret is reused for the same
+# reason applied to sessions - a new one would silently invalidate everyone's
+# login on every reinstall. A truly fresh install has no config\ yet, so both
+# are generated.
+$configDir = Join-Path $InstallDir 'config'
+$jwtSecretFile = Join-Path $configDir 'jwt-secret.key'
+$dbPasswordFile2 = Join-Path $configDir 'db-password.key'
+
+if (Test-Path $jwtSecretFile) {
+    $jwtSecret = (Get-Content $jwtSecretFile -Raw).Trim()
+} else {
+    $jwtSecret = New-RandomBase64Secret -ByteLength 40
+}
+if (Test-Path $dbPasswordFile2) {
+    $dbPassword = (Get-Content $dbPasswordFile2 -Raw).Trim()
+} else {
+    $dbPassword = New-RandomPassword -Length 32
+}
 
 $anonKey        = New-SupabaseJwt -Secret $jwtSecret -Role 'anon'
 $serviceRoleKey = New-SupabaseJwt -Secret $jwtSecret -Role 'service_role'
 
-$ports = @{
-    HTTP_PORT      = 8000
-    PG_PORT        = 5432
-    POSTGREST_PORT = 3001
-    GOTRUE_PORT    = 9999
+# HTTP_PORT is FIXED at 8000: it's the only user-facing port (the desktop
+# shortcut and the anon URL baked into the frontend both point at it), so it
+# can't be chosen dynamically without also rewriting those. The three
+# INTERNAL ports are probed for real bindability, because a Windows reserved
+# range (Hyper-V/WSL/Docker) can make the preferred one unbindable - which is
+# exactly what killed Postgres on 5432. Each is excluded from the next so
+# they can't collide.
+$httpPort = 8000
+$pgPortFile = Join-Path (Join-Path $InstallDir 'config') 'pg-port.txt'
+if (Test-Path $pgPortFile) {
+    # Reuse the port a previous provision already baked into postgresql.conf,
+    # so a reinstall/re-provision stays consistent with the existing data dir
+    # instead of picking a new port the running Postgres isn't listening on.
+    $pgPort = [int]((Get-Content $pgPortFile -Raw).Trim())
+} else {
+    $pgPort = Get-BindablePort -Preferred 5432 -Exclude @($httpPort)
 }
+$pgrPort  = Get-BindablePort -Preferred 3001 -Exclude @($httpPort, $pgPort)
+$gotPort  = Get-BindablePort -Preferred 9999 -Exclude @($httpPort, $pgPort, $pgrPort)
+$ports = @{
+    HTTP_PORT      = $httpPort
+    PG_PORT        = $pgPort
+    POSTGREST_PORT = $pgrPort
+    GOTRUE_PORT    = $gotPort
+}
+Write-Host "Ports: HTTP=$httpPort  Postgres=$pgPort  PostgREST=$pgrPort  GoTrue=$gotPort"
 
 $replacements = @{
     JWT_SECRET  = $jwtSecret
@@ -124,7 +192,7 @@ $replacements = @{
 } + $ports
 
 $templateDir = Join-Path $PSScriptRoot '..\config'
-$configDir   = Join-Path $InstallDir 'config'
+# $configDir already set above (near the reuse logic).
 
 Set-FromTemplate -TemplatePath (Join-Path $templateDir 'Caddyfile.template')     -OutPath (Join-Path $configDir 'Caddyfile')      -Replacements $replacements
 Set-FromTemplate -TemplatePath (Join-Path $templateDir 'gotrue.env.template')     -OutPath (Join-Path $configDir 'gotrue.env')     -Replacements $replacements
@@ -157,6 +225,16 @@ Set-Content -Path (Join-Path $configDir 'service-role.key') -Value $serviceRoleK
 # Get-Content strips) - every DB connection would then fail auth. ASCII
 # guarantees no BOM (the password is alphanumeric).
 Set-Content -Path (Join-Path $configDir 'db-password.key') -Value $dbPassword -NoNewline -Encoding ASCII
+
+# The JWT secret, stored so a re-provision can reuse it (see the reuse logic
+# up top) instead of silently invalidating every session. Never served; only
+# read back by this script. ASCII, no BOM.
+Set-Content -Path (Join-Path $configDir 'jwt-secret.key') -Value $jwtSecret -NoNewline -Encoding ASCII
+
+# The chosen Postgres port, so every maintenance script (provision, backup,
+# restore, migrate, reset-admin, export-report) connects to the right place
+# when it isn't the default 5432. ASCII, no BOM.
+Set-Content -Path (Join-Path $configDir 'pg-port.txt') -Value ([string]$pgPort) -NoNewline -Encoding ASCII
 
 Write-Host "Secrets generated and config files written to $configDir"
 Write-Host "JWT secret and DB password are unique to this machine - do not copy config\ between installs."

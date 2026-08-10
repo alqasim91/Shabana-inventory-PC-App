@@ -46,10 +46,12 @@ try {
     # 3. Recent Postgres errors, if the DB is reachable.
     $pgBin = Join-Path $InstallDir 'bin\pg\bin'
     $pwFile = Join-Path $configDir 'db-password.key'
+    $pgPortFile = Join-Path $configDir 'pg-port.txt'
+    $pgPort = if (Test-Path $pgPortFile) { (Get-Content $pgPortFile -Raw).Trim() } else { '5432' }
     if ((Test-Path (Join-Path $pgBin 'psql.exe')) -and (Test-Path $pwFile)) {
         $env:PGPASSWORD = Get-Content $pwFile -Raw
         try {
-            & (Join-Path $pgBin 'psql.exe') -U postgres -h 127.0.0.1 -d postgres -c `
+            & (Join-Path $pgBin 'psql.exe') -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c `
                 "select filename, applied_at from shabana_migrations order by filename;" `
                 *> (Join-Path $staging 'applied-migrations.txt')
         } catch {

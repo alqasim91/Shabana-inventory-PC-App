@@ -57,15 +57,17 @@ Write-Host "Stopping application services..."
 Stop-Service -Name 'ShabanaCaddy', 'ShabanaGoTrue', 'ShabanaPostgREST' -ErrorAction SilentlyContinue
 
 $dbPassword = Get-Content (Join-Path $InstallDir 'config\db-password.key') -Raw
+$pgPortFile = Join-Path $InstallDir 'config\pg-port.txt'
+$pgPort = if (Test-Path $pgPortFile) { (Get-Content $pgPortFile -Raw).Trim() } else { '5432' }
 $env:PGPASSWORD = $dbPassword
 try {
     Write-Host "Dropping and recreating database..."
-    & (Join-Path $pgBin 'psql.exe') -U postgres -h 127.0.0.1 -d postgres -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres' and pid <> pg_backend_pid();"
-    & (Join-Path $pgBin 'dropdb.exe') -U postgres -h 127.0.0.1 postgres --if-exists
-    & (Join-Path $pgBin 'createdb.exe') -U postgres -h 127.0.0.1 postgres
+    & (Join-Path $pgBin 'psql.exe') -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres' and pid <> pg_backend_pid();"
+    & (Join-Path $pgBin 'dropdb.exe') -U postgres -h 127.0.0.1 -p $pgPort postgres --if-exists
+    & (Join-Path $pgBin 'createdb.exe') -U postgres -h 127.0.0.1 -p $pgPort postgres
 
     Write-Host "Restoring from dump..."
-    & (Join-Path $pgBin 'pg_restore.exe') -U postgres -h 127.0.0.1 -d postgres $DumpFile
+    & (Join-Path $pgBin 'pg_restore.exe') -U postgres -h 127.0.0.1 -p $pgPort -d postgres $DumpFile
     if ($LASTEXITCODE -ne 0) { throw "pg_restore reported errors - check output above before trusting this restore." }
 } finally {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue

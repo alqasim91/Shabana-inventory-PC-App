@@ -42,12 +42,14 @@ if (-not (Test-Path $BackupDir)) { New-Item -ItemType Directory -Path $BackupDir
 
 $pgBin = Join-Path $InstallDir 'bin\pg\bin'
 $dbPassword = Get-Content (Join-Path $InstallDir 'config\db-password.key') -Raw
+$pgPortFile = Join-Path $InstallDir 'config\pg-port.txt'
+$pgPort = if (Test-Path $pgPortFile) { (Get-Content $pgPortFile -Raw).Trim() } else { '5432' }
 $stamp = (Get-Date).ToString('yyyy-MM-dd_HHmmss')
 $outFile = Join-Path $BackupDir "shabana-$stamp.dump"
 
 $env:PGPASSWORD = $dbPassword
 try {
-    & (Join-Path $pgBin 'pg_dump.exe') -U postgres -h 127.0.0.1 -Fc -f $outFile postgres
+    & (Join-Path $pgBin 'pg_dump.exe') -U postgres -h 127.0.0.1 -p $pgPort -Fc -f $outFile postgres
     if ($LASTEXITCODE -ne 0) { throw 'pg_dump failed' }
 } finally {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue

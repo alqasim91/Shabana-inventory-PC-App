@@ -21,6 +21,8 @@ $ErrorActionPreference = 'Stop'
 
 $pgBin = Join-Path $InstallDir 'bin\pg\bin'
 $dbPassword = Get-Content (Join-Path $InstallDir 'config\db-password.key') -Raw
+$pgPortFile = Join-Path $InstallDir 'config\pg-port.txt'
+$pgPort = if (Test-Path $pgPortFile) { (Get-Content $pgPortFile -Raw).Trim() } else { '5432' }
 
 $securePw  = Read-Host "New password for $Email" -AsSecureString
 $confirmPw = Read-Host "Confirm new password" -AsSecureString
@@ -46,7 +48,7 @@ set encrypted_password = crypt('$($plain1.Replace("'", "''"))', gen_salt('bf')),
     updated_at = now()
 where email = '$($Email.Replace("'", "''"))';
 "@
-    $result = & (Join-Path $pgBin 'psql.exe') -U postgres -h 127.0.0.1 -d postgres -c $sql -t
+    $result = & (Join-Path $pgBin 'psql.exe') -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c $sql -t
     if ($LASTEXITCODE -ne 0) { throw "Failed to update password." }
 } finally {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
