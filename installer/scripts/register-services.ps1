@@ -51,6 +51,11 @@ function Install-NssmService {
     & $nssm set $Name AppDirectory $WorkingDir | Out-Null
     & $nssm set $Name AppStdout $LogFile | Out-Null
     & $nssm set $Name AppStderr $LogFile | Out-Null
+    # 4 = append rather than truncate. Without it a service that restart-loops
+    # overwrites its own log on every attempt, so the first (real) error is
+    # gone by the time anyone reads it.
+    & $nssm set $Name AppStdoutCreationDisposition 4 | Out-Null
+    & $nssm set $Name AppStderrCreationDisposition 4 | Out-Null
     & $nssm set $Name Start SERVICE_AUTO_START | Out-Null
     & $nssm set $Name AppRestartDelay 3000 | Out-Null
 }
@@ -105,6 +110,21 @@ $gotrueEnv = @(
 if ($gotrueEnv.Count -eq 0) { throw 'gotrue.env produced no KEY=VALUE settings.' }
 & $nssm set ShabanaGoTrue AppEnvironmentExtra @gotrueEnv | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Failed to set GoTrue environment (nssm exit $LASTEXITCODE)" }
+
+# Validate the Caddyfile BEFORE registering. A config error otherwise shows up
+# only as "Failed to start service ShabanaCaddy" with an empty caddy.log,
+# because the process dies before NSSM ever attaches its output streams.
+$caddyExe = Join-Path $InstallDir 'bin\caddy\caddy.exe'
+$caddyFile = Join-Path $configDir 'Caddyfile'
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$caddyCheck = & $caddyExe validate --config $caddyFile --adapter caddyfile 2>&1 | Out-String
+$caddyOk = ($LASTEXITCODE -eq 0)
+$ErrorActionPreference = $prevEap
+if (-not $caddyOk) {
+    throw "Caddy rejected its configuration - it would fail to start with no log. Output:`n$caddyCheck"
+}
+Write-Host 'Caddy configuration validated.'
 
 Install-NssmService -Name 'ShabanaCaddy' `
     -Exe (Join-Path $InstallDir 'bin\caddy\caddy.exe') `
