@@ -218,7 +218,10 @@ jobs:
           SHABANA_NONINTERACTIVE: '1'
         run: |
           $ErrorActionPreference = 'Stop'
-          $root = Join-Path $env:RUNNER_TEMP 'ShabanaSmoke'
+          # Under ProgramData, like a real install - not RUNNER_TEMP, whose
+          # ACLs are not representative of a customer's machine.
+          $root = 'C:\ProgramData\ShabanaSmoke'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $root | Out-Null
           foreach ($d in 'bin','www-src','supabase','installer') {
             Copy-Item -Recurse -Force "pc-app/installer/payload/$d" (Join-Path $root $d)
@@ -280,9 +283,9 @@ jobs:
         shell: pwsh
         run: |
           Stop-Service ShabanaCaddy,ShabanaGoTrue,ShabanaPostgREST,ShabanaPostgres -EA SilentlyContinue
-          $nssm = Join-Path $env:RUNNER_TEMP 'ShabanaSmoke\bin\nssm\nssm.exe'
+          $nssm = 'C:\ProgramData\ShabanaSmoke\bin\nssm\nssm.exe'
           if (Test-Path $nssm) { 'ShabanaCaddy','ShabanaGoTrue','ShabanaPostgREST' | % { & $nssm remove $_ confirm } }
-          $pgctl = Join-Path $env:RUNNER_TEMP 'ShabanaSmoke\bin\pg\bin\pg_ctl.exe'
+          $pgctl = 'C:\ProgramData\ShabanaSmoke\bin\pg\bin\pg_ctl.exe'
           if (Test-Path $pgctl) { & $pgctl unregister -N ShabanaPostgres }
           exit 0
 

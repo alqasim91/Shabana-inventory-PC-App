@@ -55,7 +55,12 @@ $logsDir    = Join-Path $InstallDir 'logs'
 $migrationsDir = Join-Path $PSScriptRoot '..\..\supabase\migrations'
 $bootstrapSql  = Join-Path $PSScriptRoot '..\..\supabase\platform-bootstrap.sql'
 
-foreach ($dir in @($dataDir, $configDir, $logsDir, (Join-Path $InstallDir 'backups'), (Join-Path $InstallDir 'public'))) {
+# NOTE: data\pg itself is deliberately NOT created here - only its parent.
+# initdb wants to set permissions on its target directory, and it fails with
+# "could not change permissions of directory ... Permission denied" when it is
+# handed a directory someone else created under ACLs it cannot alter. Letting
+# initdb create the directory itself avoids depending on the parent's ACLs.
+foreach ($dir in @((Split-Path -Parent $dataDir), $configDir, $logsDir, (Join-Path $InstallDir 'backups'), (Join-Path $InstallDir 'public'))) {
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 }
 
