@@ -151,13 +151,22 @@ begin
       instance_id, id, aud, role, email,
       encrypted_password, email_confirmed_at,
       raw_app_meta_data, raw_user_meta_data,
-      created_at, updated_at
+      created_at, updated_at,
+      -- Empty strings, NOT null. GoTrue scans these columns into plain Go
+      -- strings, so a NULL makes every login fail with a 500 and the
+      -- unhelpful "Database error querying schema" - the row looks perfect
+      -- in psql and the password is correct. GoTrue writes '' here itself;
+      -- a row minted by hand has to match.
+      confirmation_token, recovery_token, email_change_token_new,
+      email_change_token_current, email_change,
+      phone_change, phone_change_token, reauthentication_token
     ) values (
       '00000000-0000-0000-0000-000000000000', gen_random_uuid(),
       'authenticated', 'authenticated', $1,
       extensions.crypt($2, extensions.gen_salt('bf', 10)), now(),
       '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
-      now(), now()
+      now(), now(),
+      '', '', '', '', '', '', '', ''
     ) returning id
   $ins$ into v_user_id using v_email, p_admin_password;
 
@@ -255,13 +264,22 @@ begin
         instance_id, id, aud, role, email,
         encrypted_password, email_confirmed_at,
         raw_app_meta_data, raw_user_meta_data,
-        created_at, updated_at
+        created_at, updated_at,
+        -- Empty strings, NOT null. GoTrue scans these columns into plain Go
+        -- strings, so a NULL makes every login fail with a 500 and the
+        -- unhelpful "Database error querying schema" - the row looks perfect
+        -- in psql and the password is correct. GoTrue writes '' here itself;
+        -- a row minted by hand has to match.
+        confirmation_token, recovery_token, email_change_token_new,
+        email_change_token_current, email_change,
+        phone_change, phone_change_token, reauthentication_token
       ) values (
         '00000000-0000-0000-0000-000000000000', gen_random_uuid(),
         'authenticated', 'authenticated', $1,
         extensions.crypt($2, extensions.gen_salt('bf', 10)), now(),
         '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
-        now(), now()
+        now(), now(),
+        '', '', '', '', '', '', '', ''
       ) returning id
     $ins$ into v_user_id using v_email, p_password;
   exception when unique_violation then

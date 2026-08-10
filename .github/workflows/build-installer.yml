@@ -283,6 +283,20 @@ jobs:
 
           Write-Host "SMOKE TEST PASSED - provisioned, claimed, logged in, read site '$($sites[0].name_ar)'."
 
+      # The smoke test drives the stack over HTTP, so when a call fails all we
+      # see is the HTTP error. The reason is in the service logs.
+      - name: Smoke test logs
+        if: failure()
+        shell: pwsh
+        run: |
+          $logs = 'C:\ProgramData\ShabanaSmoke\logs'
+          if (-not (Test-Path $logs)) { Write-Host 'No logs directory.'; exit 0 }
+          Get-ChildItem "$logs\*.log" | ForEach-Object {
+            Write-Host "===== $($_.Name) ====="
+            Get-Content $_ -Tail 40 | Write-Host
+          }
+          exit 0
+
       - name: Smoke test cleanup
         if: always()
         shell: pwsh
