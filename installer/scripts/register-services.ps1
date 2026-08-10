@@ -44,10 +44,22 @@ function Install-NssmService {
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Service $Name already registered, updating..."
         & $nssm set $Name Application $Exe | Out-Null
-        & $nssm set $Name AppParameters $Args | Out-Null
     } else {
-        & $nssm install $Name $Exe $Args
+        # Install with the program ONLY. Passing the arguments here as well
+        # means PowerShell hands nssm one string that it re-parses, and any
+        # embedded quotes get escaped along the way - Caddy received a mangled
+        # command line, printed its help text and exited, which surfaced as a
+        # service that "started" and immediately stopped with a log full of
+        # usage instructions. Setting AppParameters explicitly avoids that
+        # round trip.
+        & $nssm install $Name $Exe | Out-Null
     }
+    & $nssm set $Name AppParameters $Args | Out-Null
+    # Read it back. If the arguments ever get mangled again, this line says so
+    # in the provisioning window instead of leaving a service that silently
+    # runs the wrong command.
+    $stored = (& $nssm get $Name AppParameters) -join ' '
+    Write-Host ("  {0} args: {1}" -f $Name, ($stored -replace '\0', '').Trim())
     & $nssm set $Name AppDirectory $WorkingDir | Out-Null
     & $nssm set $Name AppStdout $LogFile | Out-Null
     & $nssm set $Name AppStderr $LogFile | Out-Null
@@ -128,7 +140,7 @@ Write-Host 'Caddy configuration validated.'
 
 Install-NssmService -Name 'ShabanaCaddy' `
     -Exe (Join-Path $InstallDir 'bin\caddy\caddy.exe') `
-    -Args "run --config `"$configDir\Caddyfile`" --adapter caddyfile" `
+    -Args "run --config $configDir\Caddyfile --adapter caddyfile" `
     -WorkingDir (Join-Path $InstallDir 'bin\caddy') `
     -LogFile (Join-Path $logsDir 'caddy.log')
 

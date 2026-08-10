@@ -48,6 +48,16 @@ trap {
     exit 1
 }
 
+# Service command lines are handed to NSSM unquoted, because quoting them gets
+# mangled on the way through - it is what made Caddy launch with no arguments,
+# print its help text and exit. The installer fixes the path to
+# C:\ProgramData\Shabana, which has no spaces, so this only fires if someone
+# provisions by hand against a different location - and it says why, instead of
+# producing a service that silently runs the wrong command.
+if ($InstallDir -match '\s') {
+    throw "InstallDir must not contain spaces (got '$InstallDir'). Service arguments are passed unquoted."
+}
+
 $pgBin      = Join-Path $InstallDir 'bin\pg\bin'
 $dataDir    = Join-Path $InstallDir 'data\pg'
 $configDir  = Join-Path $InstallDir 'config'
