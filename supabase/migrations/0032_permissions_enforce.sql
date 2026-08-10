@@ -32,7 +32,15 @@ begin
   if not exists (select 1 from pg_proc where proname = 'has_perm') then
     raise exception 'ABORT: has_perm() missing — apply 0031 first';
   end if;
-  if not exists (select 1 from user_permissions) then
+  -- PC EDITION DIVERGENCE (see supabase/PC-DIVERGENCE.md) - the `exists ... from
+  -- profiles` clause is added here and is NOT in the cloud copy of this file.
+  -- 0031's backfill inserts one row per existing profile. On a fresh PC install
+  -- the database is empty (the first profile is created at runtime by
+  -- pc_first_run_bootstrap, long after migrations run), so the backfill
+  -- correctly inserts nothing and this guard then fires on a database that is
+  -- perfectly healthy - aborting provisioning before any service is registered.
+  -- The guard is only meaningful when there was data to back-fill.
+  if exists (select 1 from profiles) and not exists (select 1 from user_permissions) then
     raise exception 'ABORT: user_permissions is empty — 0031 backfill did not run';
   end if;
 end $$;

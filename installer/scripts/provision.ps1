@@ -141,6 +141,20 @@ try {
     & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_storage_admin password '$escapedPw';"
     if ($LASTEXITCODE -ne 0) { throw 'Failed to set role passwords' }
 
+    # PC compatibility layer. Must sit between the platform bootstrap and the
+    # application migrations: it pre-creates things those migrations assume the
+    # cloud already had (the storage schema; order-number sequences that can
+    # legally be setval'd to 0 on an empty database). Without it, 0017 and 0022
+    # abort provisioning outright and no service is ever registered. See the
+    # file's own header for the full reasoning.
+    $preludeSql = Join-Path $PSScriptRoot '..\..\supabase\pc-prelude.sql'
+    if (-not (Test-Path $preludeSql)) {
+        throw "pc-prelude.sql not found - the application migrations cannot apply without it."
+    }
+    Write-Host 'Applying PC compatibility prelude...'
+    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $preludeSql
+    if ($LASTEXITCODE -ne 0) { throw 'PC prelude failed' }
+
     Write-Host 'Applying application migrations...'
     Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
         Write-Host "  -> $($_.Name)"

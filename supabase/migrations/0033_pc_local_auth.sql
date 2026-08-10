@@ -67,13 +67,22 @@ $$;
 -- ---------------------------------------------------------------------------
 -- 1. pc_needs_setup() — is this a fresh, unclaimed install?
 -- ---------------------------------------------------------------------------
--- Anon-callable, and deliberately reveals only a single boolean: whether any
--- organization exists yet. The first-run screen calls it to decide whether to
--- show setup or redirect to login. It leaks nothing an attacker could use — a
--- fresh install is a fresh install whether or not anyone asks.
+-- Anon-callable, and deliberately reveals only a single boolean: whether this
+-- install has been claimed yet. The first-run screen calls it to decide whether
+-- to show setup or redirect to login. It leaks nothing an attacker could use —
+-- a fresh install is a fresh install whether or not anyone asks.
+--
+-- The test is "no PROFILE exists", not "no organization exists": migrations
+-- 0009/0024 seed a default organization row (slug 'shabana') as part of the
+-- cloud's single-tenant → multi-tenant conversion, so a freshly migrated PC
+-- database ALWAYS has exactly one organization and zero users. Testing for the
+-- organization therefore reported "already set up" on every fresh install, the
+-- setup screen never appeared, and — with no account ever created — the app
+-- could not be logged into at all. A profile is the thing a human actually
+-- creates, so its absence is the true definition of "unclaimed".
 create or replace function pc_needs_setup() returns boolean
 language sql stable security definer set search_path = public
-as $$ select not exists (select 1 from organization); $$;
+as $$ select not exists (select 1 from profiles); $$;
 
 revoke execute on function pc_needs_setup() from public;
 grant execute on function pc_needs_setup() to anon, authenticated;
@@ -113,7 +122,11 @@ declare
 begin
   perform pg_advisory_xact_lock(hashtext('pc_first_run_bootstrap'));
 
-  if exists (select 1 from organization) then
+  -- "Claimed" means a user exists, not that an organization row exists — see
+  -- pc_needs_setup() above for why the two are not the same on a fresh
+  -- database. This keeps the one-shot guarantee intact: the instant the first
+  -- profile is created, this function is a permanent no-op.
+  if exists (select 1 from profiles) then
     return jsonb_build_object('ok', false, 'code', 'already_setup');
   end if;
 
@@ -147,6 +160,18 @@ begin
       now(), now()
     ) returning id
   $ins$ into v_user_id using v_email, p_admin_password;
+
+  -- Clear the placeholder organization the migrations seeded (see
+  -- pc_needs_setup) so provision_organization can create the real one under the
+  -- name the owner just typed, rather than colliding on the unique slug. This
+  -- is safe precisely here and nowhere else: we only reach this line when no
+  -- profile exists, and the guards below additionally refuse to delete an org
+  -- that anything at all is attached to. On a claimed install this deletes
+  -- nothing.
+  delete from organization o
+   where o.slug = v_slug
+     and not exists (select 1 from profiles p where p.org_id = o.id)
+     and not exists (select 1 from sites    s where s.org_id = o.id);
 
   -- provision_organization is owned by the same superuser and REVOKEd from
   -- anon/authenticated, but this SECURITY DEFINER function runs as its owner,
