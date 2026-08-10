@@ -26,8 +26,18 @@
 -- to initdb before any of these scripts run). Our installer's initdb runs
 -- as `postgres` instead (see installer/scripts/provision.ps1) to keep
 -- every other script in this repo consistent, so the role these scripts
--- immediately ALTER doesn't exist yet without the one line below.
-create role supabase_admin;
+-- immediately ALTER doesn't exist yet without the block below.
+--
+-- Guarded, because `create role` has no IF NOT EXISTS: unguarded, this file
+-- fails on its very FIRST statement whenever it runs against a data directory
+-- an earlier provisioning attempt already touched - which is exactly the case
+-- where it most needs to work.
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'supabase_admin') then
+    create role supabase_admin;
+  end if;
+end $$;
 
 -- auth.uid()/auth.role() functions further down read
 -- request.jwt.claim.sub — verify this still matches what PostgREST 16

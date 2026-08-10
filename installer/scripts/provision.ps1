@@ -27,6 +27,25 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Inno runs this in its own PowerShell window. Without this trap, any failure
+# exits immediately and the window - the ONLY place the reason is ever shown -
+# vanishes before it can be read, leaving the customer with a broken install
+# and nothing to report but "it didn't work". Hold the window open on failure.
+trap {
+    Write-Host ''
+    Write-Host '============================================================'
+    Write-Host 'SETUP FAILED - the application was NOT installed correctly.'
+    Write-Host ''
+    Write-Host $_.Exception.Message
+    Write-Host ''
+    Write-Host "Logs are in: $InstallDir\logs"
+    Write-Host 'Send them to support (Start Menu > Export problem report).'
+    Write-Host '============================================================'
+    Write-Host 'Press Enter to close this window...'
+    try { Read-Host | Out-Null } catch { Start-Sleep -Seconds 120 }
+    exit 1
+}
+
 $pgBin      = Join-Path $InstallDir 'bin\pg\bin'
 $dataDir    = Join-Path $InstallDir 'data\pg'
 $configDir  = Join-Path $InstallDir 'config'
@@ -60,7 +79,36 @@ $pgPort = (Get-Content (Join-Path $configDir 'pg-port.txt') -Raw).Trim()
 # BUILD_PLAN.md items #3 and #7. Never inherit whatever locale/timezone
 # Windows happens to be set to.
 
-if (-not (Test-Path (Join-Path $dataDir 'PG_VERSION'))) {
+# A data directory from an ATTEMPT THAT NEVER FINISHED is worse than no data
+# directory: provisioning is not fully idempotent (platform-bootstrap creates
+# roles and schemas, and the app migrations are one-shot), so re-running over a
+# half-built database fails on whatever the previous run already managed to
+# create - and the customer is left having to delete a folder by hand from an
+# elevated prompt, which is not something a shop owner should ever be asked to
+# do. The marker below is written only after migrations fully succeed, so its
+# ABSENCE is proof the database was never completed and holds nothing worth
+# keeping.
+#
+# The old directory is RENAMED, never deleted. If this logic is ever wrong
+# about what it is looking at, the data is still on disk and recoverable.
+$markerFile = Join-Path $configDir 'provision-complete.marker'
+$dbExists   = Test-Path (Join-Path $dataDir 'PG_VERSION')
+
+if ($dbExists -and -not (Test-Path $markerFile)) {
+    Write-Host 'Found a database from an earlier attempt that never completed.'
+    # Anything still holding the folder open has to let go before a rename.
+    Stop-Service -Name 'ShabanaCaddy', 'ShabanaGoTrue', 'ShabanaPostgREST', 'ShabanaPostgres' -ErrorAction SilentlyContinue
+    & (Join-Path $pgBin 'pg_ctl.exe') stop -D $dataDir -m immediate -w 2>$null | Out-Null
+    Start-Sleep -Seconds 2
+
+    $quarantine = Join-Path (Split-Path -Parent $dataDir) ("pg.failed-" + (Get-Date).ToString('yyyy-MM-dd_HHmmss'))
+    Rename-Item -Path $dataDir -NewName (Split-Path -Leaf $quarantine)
+    Write-Host "Moved it aside to: $quarantine"
+    Write-Host 'Starting from a clean database.'
+    $dbExists = $false
+}
+
+if (-not $dbExists) {
     Write-Host 'Running initdb...'
     & (Join-Path $pgBin 'initdb.exe') `
         --pgdata=$dataDir `
@@ -123,50 +171,68 @@ try {
     if (-not (Test-Path $bootstrapSql)) {
         throw "platform-bootstrap.sql not found - see BUILD_PLAN.md. Provisioning cannot safely continue without it."
     }
-    Write-Host 'Applying platform bootstrap...'
-    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $bootstrapSql
-    if ($LASTEXITCODE -ne 0) { throw 'Platform bootstrap failed' }
-
-    # PostgREST connects as `authenticator`, GoTrue as `supabase_auth_admin`
-    # (see installer/config/postgrest.conf.template and gotrue.env.template)
-    # - the bootstrap above creates both roles but sets no password on
-    # either. Reusing the one generated DB password here keeps every script
-    # in this repo (backup/restore/migrate/reset-admin) working off a
-    # single value read from config\db-password.key, rather than tracking
-    # a separate secret per role.
-    Write-Host 'Setting role passwords...'
-    $escapedPw = $dbPassword.Replace("'", "''")
-    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -c "alter role authenticator password '$escapedPw';"
-    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_auth_admin password '$escapedPw';"
-    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_storage_admin password '$escapedPw';"
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to set role passwords' }
-
-    # PC compatibility layer. Must sit between the platform bootstrap and the
-    # application migrations: it pre-creates things those migrations assume the
-    # cloud already had (the storage schema; order-number sequences that can
-    # legally be setval'd to 0 on an empty database). Without it, 0017 and 0022
-    # abort provisioning outright and no service is ever registered. See the
-    # file's own header for the full reasoning.
-    $preludeSql = Join-Path $PSScriptRoot '..\..\supabase\pc-prelude.sql'
-    if (-not (Test-Path $preludeSql)) {
-        throw "pc-prelude.sql not found - the application migrations cannot apply without it."
+    if ($dbExists) {
+        # Reached only when the marker says this database was fully provisioned
+        # before (an upgrade re-running this script). Re-running the bootstrap
+        # over a live database risks resetting grants under a running system,
+        # and re-running every migration would be worse - upgrades apply only
+        # what is pending, which is migrate.ps1's job.
+        Write-Host 'Database already provisioned; applying only pending migrations.'
+        & (Join-Path $PSScriptRoot 'migrate.ps1') -InstallDir $InstallDir
     }
-    Write-Host 'Applying PC compatibility prelude...'
-    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $preludeSql
-    if ($LASTEXITCODE -ne 0) { throw 'PC prelude failed' }
+    else {
+        Write-Host 'Applying platform bootstrap...'
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $bootstrapSql
+        if ($LASTEXITCODE -ne 0) { throw 'Platform bootstrap failed' }
 
-    Write-Host 'Applying application migrations...'
-    Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
-        Write-Host "  -> $($_.Name)"
-        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $_.FullName
-        if ($LASTEXITCODE -ne 0) { throw "Migration failed: $($_.Name)" }
+        # PostgREST connects as `authenticator`, GoTrue as `supabase_auth_admin`
+        # (see installer/config/postgrest.conf.template and gotrue.env.template)
+        # - the bootstrap above creates both roles but sets no password on
+        # either. Reusing the one generated DB password here keeps every script
+        # in this repo (backup/restore/migrate/reset-admin) working off a
+        # single value read from config\db-password.key, rather than tracking
+        # a separate secret per role.
+        Write-Host 'Setting role passwords...'
+        $escapedPw = $dbPassword.Replace("'", "''")
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -c "alter role authenticator password '$escapedPw';"
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_auth_admin password '$escapedPw';"
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_storage_admin password '$escapedPw';"
+        if ($LASTEXITCODE -ne 0) { throw 'Failed to set role passwords' }
+
+        # PC compatibility layer. Must sit between the platform bootstrap and the
+        # application migrations: it pre-creates things those migrations assume the
+        # cloud already had (the storage schema; order-number sequences that can
+        # legally be setval'd to 0 on an empty database). Without it, 0017 and 0022
+        # abort provisioning outright and no service is ever registered. See the
+        # file's own header for the full reasoning.
+        $preludeSql = Join-Path $PSScriptRoot '..\..\supabase\pc-prelude.sql'
+        if (-not (Test-Path $preludeSql)) {
+            throw "pc-prelude.sql not found - the application migrations cannot apply without it."
+        }
+        Write-Host 'Applying PC compatibility prelude...'
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $preludeSql
+        if ($LASTEXITCODE -ne 0) { throw 'PC prelude failed' }
+
+        Write-Host 'Applying application migrations...'
+        Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
+            Write-Host "  -> $($_.Name)"
+            & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Migration failed: $($_.Name)" }
+        }
+
+        # Record what's applied, for migrate.ps1 on future upgrades.
+        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "create table if not exists shabana_migrations (filename text primary key, applied_at timestamptz not null default now());"
+        Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
+            & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "insert into shabana_migrations (filename) values ('$($_.Name)') on conflict do nothing;"
+        }
     }
 
-    # Record what's applied, for migrate.ps1 on future upgrades.
-    & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "create table if not exists shabana_migrations (filename text primary key, applied_at timestamptz not null default now());"
-    Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
-        & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "insert into shabana_migrations (filename) values ('$($_.Name)') on conflict do nothing;"
-    }
+    # Only NOW is the database a complete, usable one. Everything above this
+    # line can be safely thrown away and redone; everything after it cannot.
+    # A future run that finds this marker missing will quarantine the data
+    # directory and start over - see the check near initdb.
+    Set-Content -Path $markerFile -Encoding ASCII -NoNewline `
+        -Value ("provisioned " + (Get-Date).ToString('o'))
 }
 finally {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue

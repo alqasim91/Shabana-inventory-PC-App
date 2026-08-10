@@ -51,6 +51,9 @@ Source: "payload\bin\*"; DestDir: "{app}\bin"; Flags: recursesubdirs ignoreversi
 Source: "payload\www\*"; DestDir: "{app}\www"; Flags: recursesubdirs ignoreversion
 Source: "payload\supabase\*"; DestDir: "{app}\supabase"; Flags: recursesubdirs ignoreversion
 Source: "payload\installer\*"; DestDir: "{app}\installer"; Flags: recursesubdirs ignoreversion
+; Placeholder target for the shortcuts below; provision.ps1 rewrites it with
+; the HTTP port actually chosen at install time.
+Source: "payload\Shabana.url"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; Points at a .url file written by provision.ps1, NOT at a literal
