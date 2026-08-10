@@ -14,6 +14,25 @@ import { test, expect, type ConsoleMessage, type Page } from '@playwright/test';
  * services up, nobody registered yet.
  */
 
+/**
+ * Every API call the page makes, with the response body for anything that is
+ * not a 2xx. Without this a failed screen reports only "the URL never
+ * changed", and the reason - a 403 from a Caddy matcher, a PostgREST error
+ * code, a refused RPC - stays invisible in a browser nobody can open.
+ */
+function watchNetwork(page: Page): string[] {
+  const failures: string[] = [];
+  page.on('response', async (res) => {
+    const url = res.url();
+    if (!/\/rest\/v1\/|\/auth\/v1\//.test(url)) return;
+    if (res.status() >= 200 && res.status() < 300) return;
+    let body = '';
+    try { body = (await res.text()).slice(0, 500); } catch { body = '(unreadable)'; }
+    failures.push(`${res.status()} ${res.request().method()} ${url}\n    ${body}`);
+  });
+  return failures;
+}
+
 /** Console errors, collected so a silently-broken screen still fails the run. */
 function watchConsole(page: Page): string[] {
   const errors: string[] = [];
@@ -26,6 +45,14 @@ function watchConsole(page: Page): string[] {
 
 test('first run: setup, then log in', async ({ page }) => {
   const consoleErrors = watchConsole(page);
+  const netFailures = watchNetwork(page);
+
+  // Report what actually went wrong, rather than a bare "URL never changed".
+  const explain = async (what: string) =>
+    `${what}\nURL: ${page.url()}\n` +
+    `Failed API calls:\n${netFailures.join('\n') || '  (none)'}\n` +
+    `Console errors:\n${consoleErrors.join('\n') || '  (none)'}\n` +
+    `Visible text:\n${(await page.locator('body').innerText()).slice(0, 1200)}`;
 
   // --- The install is unclaimed, so the app must offer setup ---------------
   // Entering at the root, the way the desktop shortcut does - not by deep
@@ -50,7 +77,11 @@ test('first run: setup, then log in', async ({ page }) => {
   await page.locator('form button[type="submit"]').click();
 
   // On success the setup screen sends the owner to their org's login page.
-  await expect(page).toHaveURL(/\/shabana\/login/, { timeout: 30_000 });
+  try {
+    await expect(page).toHaveURL(/\/shabana\/login/, { timeout: 30_000 });
+  } catch {
+    throw new Error(await explain('Setup form did not complete.'));
+  }
 
   // --- The business name reaches the login screen -------------------------
   // Proves the org row was really written and is being read back, not just
@@ -66,7 +97,11 @@ test('first run: setup, then log in', async ({ page }) => {
 
   // Landing anywhere that is not the login page means GoTrue issued a token,
   // the session stuck, and the protected route let us through.
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 30_000 });
+  try {
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 30_000 });
+  } catch {
+    throw new Error(await explain('Login did not get past the login page.'));
+  }
 
   // --- And the app behind the login actually renders -----------------------
   // The dashboard reads real rows through RLS. If auth.uid() were wrong the
