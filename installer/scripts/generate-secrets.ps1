@@ -255,6 +255,11 @@ Set-Content -Path (Join-Path $configDir 'jwt-secret.key') -Value $jwtSecret -NoN
 # when it isn't the default 5432. ASCII, no BOM.
 Set-Content -Path (Join-Path $configDir 'pg-port.txt') -Value ([string]$pgPort) -NoNewline -Encoding ASCII
 
+# The anon key. NOT a secret in the way the others are - it is compiled into
+# the JavaScript every browser downloads - but having it on disk lets the CI
+# smoke test and local diagnostics call the REST API exactly as the app does.
+Set-Content -Path (Join-Path $configDir 'anon.key') -Value $anonKey -NoNewline -Encoding ASCII
+
 # The chosen HTTP port, so provision.ps1 can write the desktop shortcut to the
 # right URL and the health check knows what to probe. ASCII, no BOM.
 Set-Content -Path (Join-Path $configDir 'http-port.txt') -Value ([string]$httpPort) -NoNewline -Encoding ASCII

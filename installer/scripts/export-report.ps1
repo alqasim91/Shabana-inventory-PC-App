@@ -73,7 +73,10 @@ try {
     }
     $portInfo += ''
     $portInfo += '--- Windows reserved TCP port ranges ---'
-    $portInfo += (& netsh int ipv4 show excludedportrange protocol=tcp 2>&1 | Out-String)
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $portInfo += (& netsh int ipv4 show excludedportrange protocol=tcp 2>&1 | Out-String) } catch { }
+    $ErrorActionPreference = $prevEap
     $portInfo | Out-File -FilePath (Join-Path $staging 'ports.txt') -Encoding UTF8
 
     # 5. Service state.

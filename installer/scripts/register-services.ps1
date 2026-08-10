@@ -32,7 +32,15 @@ function Install-NssmService {
         [string]$WorkingDir,
         [string]$LogFile
     )
-    $existing = & $nssm status $Name 2>$null
+    # Same trap as in provision.ps1: `2>` promotes a native command's stderr to
+    # PowerShell ErrorRecords, which $ErrorActionPreference = 'Stop' turns into
+    # a terminating error. nssm writes to stderr for a service that does not
+    # exist yet - true for every service on every FRESH install - so this line
+    # would kill provisioning at the point where it registers services.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $nssm status $Name 2>&1 | Out-Null } catch { }
+    $ErrorActionPreference = $prevEap
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Service $Name already registered, updating..."
         & $nssm set $Name Application $Exe | Out-Null

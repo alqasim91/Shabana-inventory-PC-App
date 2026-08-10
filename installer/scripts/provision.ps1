@@ -41,8 +41,10 @@ trap {
     Write-Host "Logs are in: $InstallDir\logs"
     Write-Host 'Send them to support (Start Menu > Export problem report).'
     Write-Host '============================================================'
-    Write-Host 'Press Enter to close this window...'
-    try { Read-Host | Out-Null } catch { Start-Sleep -Seconds 120 }
+    if ($env:SHABANA_NONINTERACTIVE -ne '1') {
+        Write-Host 'Press Enter to close this window...'
+        try { Read-Host | Out-Null } catch { Start-Sleep -Seconds 120 }
+    }
     exit 1
 }
 
@@ -104,7 +106,15 @@ if ($dbExists -and -not (Test-Path $markerFile)) {
     Write-Host 'Found a database from an earlier attempt that never completed.'
     # Anything still holding the folder open has to let go before a rename.
     Stop-Service -Name 'ShabanaCaddy', 'ShabanaGoTrue', 'ShabanaPostgREST', 'ShabanaPostgres' -ErrorAction SilentlyContinue
-    & (Join-Path $pgBin 'pg_ctl.exe') stop -D $dataDir -m immediate -w 2>$null | Out-Null
+    # `2>` on a native command turns its stderr into PowerShell ErrorRecords,
+    # and with $ErrorActionPreference = 'Stop' that TERMINATES the script. This
+    # pg_ctl is a best-effort "stop it if it happens to be running", and it
+    # writes to stderr whenever it is NOT running (no PID file) - which is the
+    # normal case here. Suspend the preference around it and ignore the result.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & (Join-Path $pgBin 'pg_ctl.exe') stop -D $dataDir -m immediate -w 2>&1 | Out-Null } catch { }
+    $ErrorActionPreference = $prevEap
     Start-Sleep -Seconds 2
 
     $quarantine = Join-Path (Split-Path -Parent $dataDir) ("pg.failed-" + (Get-Date).ToString('yyyy-MM-dd_HHmmss'))

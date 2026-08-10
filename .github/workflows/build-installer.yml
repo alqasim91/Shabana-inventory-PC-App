@@ -205,6 +205,87 @@ jobs:
           if ($bad) { throw 'PowerShell script validation failed.' }
           Write-Host 'All scripts parse cleanly and are pure ASCII.'
 
+      # Run the ENTIRE install on the runner - which is real Windows, admin,
+      # with real services - and then drive the app over HTTP exactly as a
+      # browser would. Every failure this project has shipped to a customer so
+      # far (a non-idempotent bootstrap, migrations that assumed pre-existing
+      # data, placeholder tokens consumed on first patch, `2>` promoting a
+      # native command's stderr to a terminating error) would have been caught
+      # right here instead of on the shop's PC.
+      - name: Smoke test - provision and drive the stack
+        shell: pwsh
+        env:
+          SHABANA_NONINTERACTIVE: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'ShabanaSmoke'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($d in 'bin','www-src','supabase','installer') {
+            Copy-Item -Recurse -Force "pc-app/installer/payload/$d" (Join-Path $root $d)
+          }
+
+          & (Join-Path $root 'installer\scripts\provision.ps1') -InstallDir $root
+          if ($LASTEXITCODE -ne 0) { throw "provision.ps1 exited $LASTEXITCODE" }
+
+          $port = (Get-Content (Join-Path $root 'config\http-port.txt') -Raw).Trim()
+          $anon = (Get-Content (Join-Path $root 'config\anon.key') -Raw).Trim()
+          $base = "http://localhost:$port"
+          $hdr  = @{ apikey = $anon; Authorization = "Bearer $anon"; 'Content-Type' = 'application/json' }
+
+          # GoTrue runs its own migrations on first start; give it a moment
+          # before expecting the auth endpoint to answer.
+          $authUp = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            try { Invoke-WebRequest "$base/auth/v1/health" -UseBasicParsing -TimeoutSec 3 | Out-Null; $authUp = $true; break }
+            catch { Start-Sleep -Seconds 2 }
+          }
+          if (-not $authUp) { throw 'GoTrue never came up on /auth/v1/health' }
+
+          # 1. Fresh install must report that it needs setup.
+          $needs = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_needs_setup" -Headers $hdr -Body '{}'
+          if ($needs -ne $true) { throw "pc_needs_setup returned '$needs', expected true on a fresh install" }
+
+          # 2. Claim the install, exactly as the first-run screen does.
+          $body = @{
+            p_business_name  = 'Smoke Test Co'
+            p_admin_fullname = 'Smoke Admin'
+            p_admin_username = 'admin'
+            p_admin_password = 'smoke-test-password'
+            p_site_name      = 'Main Branch'
+          } | ConvertTo-Json
+          $boot = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_first_run_bootstrap" -Headers $hdr -Body $body
+          if (-not $boot.ok) { throw "pc_first_run_bootstrap failed: $($boot | ConvertTo-Json -Compress)" }
+
+          # 3. Log in through GoTrue with the account it just minted.
+          $login = Invoke-RestMethod -Method Post -Uri "$base/auth/v1/token?grant_type=password" `
+            -Headers $hdr -Body (@{ email = 'admin@shabana.local'; password = 'smoke-test-password' } | ConvertTo-Json)
+          if (-not $login.access_token) { throw 'Login returned no access_token' }
+
+          # 4. Read real data with that token. This is the end-to-end proof:
+          #    Caddy routing, PostgREST, the JWT, auth.uid() reading the JSON
+          #    claims GUC, and the org-scoped RLS policies all have to be right
+          #    for this single call to return a row.
+          $auth = @{ apikey = $anon; Authorization = "Bearer $($login.access_token)" }
+          $sites = Invoke-RestMethod -Uri "$base/rest/v1/sites?select=name_ar" -Headers $auth
+          if ($sites.Count -lt 1) { throw 'Authenticated read of sites returned nothing - RLS or auth.uid() is wrong' }
+
+          # 5. And it must refuse to be claimed twice.
+          $again = Invoke-RestMethod -Method Post -Uri "$base/rest/v1/rpc/pc_first_run_bootstrap" -Headers $hdr -Body $body
+          if ($again.ok) { throw 'Second bootstrap succeeded - the one-shot guard is broken' }
+
+          Write-Host "SMOKE TEST PASSED - provisioned, claimed, logged in, read site '$($sites[0].name_ar)'."
+
+      - name: Smoke test cleanup
+        if: always()
+        shell: pwsh
+        run: |
+          Stop-Service ShabanaCaddy,ShabanaGoTrue,ShabanaPostgREST,ShabanaPostgres -EA SilentlyContinue
+          $nssm = Join-Path $env:RUNNER_TEMP 'ShabanaSmoke\bin\nssm\nssm.exe'
+          if (Test-Path $nssm) { 'ShabanaCaddy','ShabanaGoTrue','ShabanaPostgREST' | % { & $nssm remove $_ confirm } }
+          $pgctl = Join-Path $env:RUNNER_TEMP 'ShabanaSmoke\bin\pg\bin\pg_ctl.exe'
+          if (Test-Path $pgctl) { & $pgctl unregister -N ShabanaPostgres }
+          exit 0
+
       - name: Compile installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
         env:
