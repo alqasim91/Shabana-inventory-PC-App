@@ -21,16 +21,18 @@ import { test, expect, type ConsoleMessage, type Page } from '@playwright/test';
  * code, a refused RPC - stays invisible in a browser nobody can open.
  */
 function watchNetwork(page: Page): string[] {
-  const failures: string[] = [];
+  const calls: string[] = [];
   page.on('response', async (res) => {
     const url = res.url();
     if (!/\/rest\/v1\/|\/auth\/v1\//.test(url)) return;
-    if (res.status() >= 200 && res.status() < 300) return;
+    // EVERY call, not just failures. "Which requests happened at all" is the
+    // question that separates "the server said no" from "the button did
+    // nothing", and only one of those is a backend problem.
     let body = '';
-    try { body = (await res.text()).slice(0, 500); } catch { body = '(unreadable)'; }
-    failures.push(`${res.status()} ${res.request().method()} ${url}\n    ${body}`);
+    try { body = (await res.text()).slice(0, 300); } catch { body = '(unreadable)'; }
+    calls.push(`${res.status()} ${res.request().method()} ${url.replace(/^https?:\/\/[^/]+/, '')}\n    ${body}`);
   });
-  return failures;
+  return calls;
 }
 
 /** Console errors, collected so a silently-broken screen still fails the run. */
@@ -45,12 +47,15 @@ function watchConsole(page: Page): string[] {
 
 test('first run: setup, then log in', async ({ page }) => {
   const consoleErrors = watchConsole(page);
-  const netFailures = watchNetwork(page);
+  const netCalls = watchNetwork(page);
 
   // Report what actually went wrong, rather than a bare "URL never changed".
   const explain = async (what: string) =>
     `${what}\nURL: ${page.url()}\n` +
-    `Failed API calls:\n${netFailures.join('\n') || '  (none)'}\n` +
+    `API calls made:\n${netCalls.join('\n') || '  (none)'}\n` +
+    `Submit button disabled: ${await page.locator('form button[type="submit"]').isDisabled().catch(() => '?')}\n` +
+    `Field values: ${JSON.stringify(await page.locator('form input').evaluateAll(
+      (els) => els.map((e) => (e as HTMLInputElement).value)))}\n` +
     `Console errors:\n${consoleErrors.join('\n') || '  (none)'}\n` +
     `Visible text:\n${(await page.locator('body').innerText()).slice(0, 1200)}`;
 
@@ -74,7 +79,16 @@ test('first run: setup, then log in', async ({ page }) => {
   await passwords.nth(0).fill('ui-smoke-password');
   await passwords.nth(1).fill('ui-smoke-password');
 
-  await page.locator('form button[type="submit"]').click();
+  // The button is disabled until pc_needs_setup() answers. Waiting for it to
+  // be enabled makes "the app never decided whether it needs setup" fail here,
+  // with that sentence, instead of as an unexplained timeout further down.
+  const submit = page.locator('form button[type="submit"]');
+  try {
+    await expect(submit).toBeEnabled({ timeout: 20_000 });
+  } catch {
+    throw new Error(await explain('Setup submit button never became enabled.'));
+  }
+  await submit.click();
 
   // On success the setup screen sends the owner to their org's login page.
   try {
