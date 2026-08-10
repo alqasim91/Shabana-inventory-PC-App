@@ -2,6 +2,7 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { APP_NAME, SETUP } from '@/labels';
 import { isValidUsername } from '@/lib/username';
+import { useQueryClient } from '@tanstack/react-query';
 import { needsSetup, firstRunBootstrap } from '@/services/setup';
 
 /**
@@ -43,6 +44,7 @@ export function FirstRunSetup() {
   const [siteName, setSiteName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const queryClient = useQueryClient();
 
   // Already provisioned → this screen has no purpose; send them to log in.
   if (needed === false) return <Navigate to="/shabana/login" replace />;
@@ -75,6 +77,17 @@ export function FirstRunSetup() {
     setSubmitting(false);
 
     if (result.ok) {
+      // Tell the cache the install is claimed BEFORE navigating.
+      //
+      // Login.tsx answers "is this a fresh install?" from a react-query entry
+      // with a 24-hour staleTime, and that entry was populated with `true` when
+      // this very screen first loaded. Navigating without correcting it sends
+      // the owner to a login page that reads the stale `true`, redirects back
+      // to /setup, which re-checks, gets a fresh `false`, and bounces to login
+      // again - an infinite redirect loop the moment setup succeeds, on every
+      // machine. The bootstrap itself worked; the app just never let anyone
+      // reach the login screen.
+      queryClient.setQueryData(['pc-needs-setup'], false);
       navigate('/shabana/login', { replace: true });
       return;
     }

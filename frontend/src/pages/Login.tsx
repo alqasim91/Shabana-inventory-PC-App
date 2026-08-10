@@ -59,7 +59,14 @@ export function Login() {
   const { data: freshInstall } = useQuery({
     queryKey: ['pc-needs-setup'],
     queryFn: needsSetup,
-    staleTime: 1000 * 60 * 60 * 24,
+    // Seconds, not a day. This value decides a REDIRECT, and it flips exactly
+    // once in the life of an install - the moment setup completes. Holding a
+    // stale `true` after that point sends the owner back to /setup, which
+    // checks again, gets `false`, and returns here: a redirect loop with no way
+    // out. FirstRunSetup writes the new value into this cache directly on
+    // success, so the short window here is only a backstop for anyone arriving
+    // by some other route.
+    staleTime: 5_000,
     retry: false,
   });
 
