@@ -57,11 +57,25 @@ function Install-NssmService {
 
 # --- Postgres: native Windows service support, no NSSM needed -----------
 
+# pg_ctl register creates a service that runs as NT AUTHORITY\NetworkService
+# (its documented default). That account did not create the data directory and
+# has no rights to it, so the service registers fine and then fails to start
+# with a bare "Cannot start service" and nothing useful in any log. Grant it
+# access before registering. Also the logs directory, which Postgres writes to.
+$pgAccount = 'NT AUTHORITY\NetworkService'
+foreach ($dir in @($dataDir, $logsDir)) {
+    & icacls $dir /grant "$($pgAccount):(OI)(CI)F" /T /Q | Out-Null
+}
+
 $pgCtl = Join-Path $pgBin 'pg_ctl.exe'
 $pgRegistered = (Get-Service -Name 'ShabanaPostgres' -ErrorAction SilentlyContinue)
 if (-not $pgRegistered) {
-    & $pgCtl register -N ShabanaPostgres -D $dataDir -w `
-        -o "-o `"-c config_file=$dataDir\postgresql.conf`""
+    # No -o: the previous version passed `-o "-o \"-c config_file=...\""`, a
+    # doubled -o that reached postgres as a malformed option. The config file
+    # lives in the data directory, which is where postgres looks by default,
+    # so it never needed overriding at all.
+    & $pgCtl register -N ShabanaPostgres -D $dataDir -S auto
+    if ($LASTEXITCODE -ne 0) { throw "pg_ctl register failed with exit code $LASTEXITCODE" }
 }
 Set-Service -Name 'ShabanaPostgres' -StartupType Automatic
 
@@ -78,9 +92,19 @@ Install-NssmService -Name 'ShabanaGoTrue' `
     -Args '' `
     -WorkingDir (Join-Path $InstallDir 'bin\gotrue') `
     -LogFile (Join-Path $logsDir 'gotrue.log')
-# GoTrue reads its config from env vars - NSSM's AppEnvironmentExtra loads
-# them from the generated .env file at service start.
-& $nssm set ShabanaGoTrue AppEnvironmentExtra (Get-Content (Join-Path $configDir 'gotrue.env') -Raw) | Out-Null
+# GoTrue reads its config from env vars. NSSM's AppEnvironmentExtra wants each
+# setting as a SEPARATE argument of the form KEY=VALUE - handing it the whole
+# file as one string fails with "Environment should comprise strings of the
+# form KEY=VALUE", and the service then starts with no configuration at all.
+# The generated file also carries comments and blank lines, which have to go.
+$gotrueEnv = @(
+    Get-Content (Join-Path $configDir 'gotrue.env') |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -ne '' -and -not $_.StartsWith('#') -and $_.Contains('=') }
+)
+if ($gotrueEnv.Count -eq 0) { throw 'gotrue.env produced no KEY=VALUE settings.' }
+& $nssm set ShabanaGoTrue AppEnvironmentExtra @gotrueEnv | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Failed to set GoTrue environment (nssm exit $LASTEXITCODE)" }
 
 Install-NssmService -Name 'ShabanaCaddy' `
     -Exe (Join-Path $InstallDir 'bin\caddy\caddy.exe') `
@@ -90,11 +114,35 @@ Install-NssmService -Name 'ShabanaCaddy' `
 
 # --- Start everything, in dependency order -------------------------------
 
+# Start each one WITHOUT throwing on failure. A throw here aborts provisioning
+# with nothing but "Cannot start service X", killing it before the health check
+# in provision.ps1 - which prints service states and every log tail - ever gets
+# to run. Report what happened and let that diagnostic do its job.
 Write-Host 'Starting services...'
-Start-Service -Name 'ShabanaPostgres'
-Start-Sleep -Seconds 3   # give Postgres a moment to accept connections
-Start-Service -Name 'ShabanaPostgREST'
-Start-Service -Name 'ShabanaGoTrue'
-Start-Service -Name 'ShabanaCaddy'
+$startFailures = @()
+foreach ($svc in @('ShabanaPostgres', 'ShabanaPostgREST', 'ShabanaGoTrue', 'ShabanaCaddy')) {
+    try {
+        Start-Service -Name $svc -ErrorAction Stop
+        Write-Host "  started $svc"
+    } catch {
+        $startFailures += $svc
+        Write-Host "  FAILED to start $svc : $($_.Exception.Message)"
+    }
+    # Postgres has to be accepting connections before PostgREST and GoTrue
+    # try to connect, or they exit immediately and NSSM restart-loops them.
+    if ($svc -eq 'ShabanaPostgres') { Start-Sleep -Seconds 3 }
+}
+
+if ($startFailures.Count -gt 0) {
+    Write-Host ''
+    Write-Host "Services that did not start: $($startFailures -join ', ')"
+    # Windows records the real reason here when a service dies before it can
+    # write its own log - the single most useful place to look, and one no
+    # customer would ever think to check.
+    Get-WinEvent -LogName System -MaxEvents 40 -ErrorAction SilentlyContinue |
+        Where-Object { $_.Message -match 'Shabana' } |
+        Select-Object -First 5 TimeCreated, Message |
+        Format-List | Out-String | Write-Host
+}
 
 Write-Host 'All services registered and started.'
