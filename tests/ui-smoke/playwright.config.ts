@@ -5,7 +5,10 @@ import { defineConfig } from '@playwright/test';
 // launch or own.
 export default defineConfig({
   testDir: '.',
-  timeout: 60_000,
+  // Generous, because the budget has to cover BOTH the waits and the
+  // diagnostic that runs when one of them fails. A tight timeout made the
+  // failure report itself time out, which is worse than no report.
+  timeout: 180_000,
   expect: { timeout: 15_000 },
   // A flaky pass is worse than a fail here: this is the only thing standing
   // between a broken UI and a customer.

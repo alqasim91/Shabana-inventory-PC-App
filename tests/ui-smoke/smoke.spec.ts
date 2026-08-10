@@ -50,14 +50,33 @@ test('first run: setup, then log in', async ({ page }) => {
   const netCalls = watchNetwork(page);
 
   // Report what actually went wrong, rather than a bare "URL never changed".
+  // Every lookup here is time-boxed and swallowed. A diagnostic that can
+  // itself hang or throw replaces the real failure with its own, which is
+  // exactly what happened the first time this ran.
+  const safely = async <T,>(label: string, fn: () => Promise<T>): Promise<string> => {
+    try {
+      return String(await Promise.race([
+        fn(),
+        new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timed out')), 5_000)),
+      ]));
+    } catch (e) {
+      return `(${label} unavailable: ${(e as Error).message})`;
+    }
+  };
+
   const explain = async (what: string) =>
     `${what}\nURL: ${page.url()}\n` +
     `API calls made:\n${netCalls.join('\n') || '  (none)'}\n` +
-    `Submit button disabled: ${await page.locator('form button[type="submit"]').isDisabled().catch(() => '?')}\n` +
-    `Field values: ${JSON.stringify(await page.locator('form input').evaluateAll(
-      (els) => els.map((e) => (e as HTMLInputElement).value)))}\n` +
+    `Submit disabled: ${await safely('button', () =>
+      page.locator('form button[type="submit"]').isDisabled())}\n` +
+    `Submit label: ${await safely('label', () =>
+      page.locator('form button[type="submit"]').innerText())}\n` +
+    `Field values: ${await safely('fields', async () =>
+      JSON.stringify(await page.locator('form input').evaluateAll(
+        (els) => els.map((e) => (e as HTMLInputElement).value))))}\n` +
     `Console errors:\n${consoleErrors.join('\n') || '  (none)'}\n` +
-    `Visible text:\n${(await page.locator('body').innerText()).slice(0, 1200)}`;
+    `Visible text:\n${(await safely('text', () =>
+      page.locator('body').innerText())).slice(0, 1000)}`;
 
   // --- The install is unclaimed, so the app must offer setup ---------------
   // Entering at the root, the way the desktop shortcut does - not by deep
@@ -92,7 +111,7 @@ test('first run: setup, then log in', async ({ page }) => {
 
   // On success the setup screen sends the owner to their org's login page.
   try {
-    await expect(page).toHaveURL(/\/shabana\/login/, { timeout: 30_000 });
+    await expect(page).toHaveURL(/\/shabana\/login/, { timeout: 20_000 });
   } catch {
     throw new Error(await explain('Setup form did not complete.'));
   }
