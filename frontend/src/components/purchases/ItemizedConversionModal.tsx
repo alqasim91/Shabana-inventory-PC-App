@@ -5,6 +5,7 @@ import { formatQty } from '@/components/shared/MoneyDisplay';
 import { ITEMIZED_CONVERT, UNIT_LABEL, COMMON } from '@/labels';
 import { addLineConversion, type PoLineRow } from '@/services/purchases';
 import type { Site, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 interface ItemizedConversionModalProps {
   open: boolean;
@@ -132,9 +133,7 @@ export function ItemizedConversionModal({
 
       <div>
         <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{ITEMIZED_CONVERT.qty}</label>
-        <input
-          type="number"
-          inputMode="decimal"
+        <NumberInput
           value={qty}
           onChange={(e) => setQty(e.target.value)}
           className={inputClass}

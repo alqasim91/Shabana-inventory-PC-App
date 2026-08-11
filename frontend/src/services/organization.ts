@@ -40,6 +40,8 @@ export interface OrganizationUpdateInput {
   business_name: string;
   address_line: string | null;
   phone_line: string | null;
+  currency: string;
+  timezone: string;
 }
 
 export async function updateOrganization(input: OrganizationUpdateInput): Promise<void> {

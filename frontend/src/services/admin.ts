@@ -27,7 +27,7 @@ export async function updateProfile(userId: UUID, input: ProfileUpdateInput): Pr
 //
 // PC EDITION: there is no Deno edge runtime on a shop PC and nowhere safe to
 // keep a service_role key, so the cloud app's admin-create-user Edge Function
-// is replaced by the pc_create_user() SQL function (migration 0033), a
+// is replaced by the pc_create_user() SQL function (migration 0100), a
 // SECURITY DEFINER routine that writes auth.users directly. It enforces the
 // SAME authority server-side: the caller must be an admin of an org, and the
 // login email is derived from the caller's own org slug inside the function —

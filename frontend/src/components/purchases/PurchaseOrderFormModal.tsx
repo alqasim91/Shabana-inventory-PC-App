@@ -17,6 +17,7 @@ import {
   type PurchaseOrderDetail,
 } from '@/services/purchases';
 import type { PoType, UnitType, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 interface PurchaseOrderFormModalProps {
   open: boolean;
@@ -292,9 +293,7 @@ export function PurchaseOrderFormModal({ open, onClose, onSaved, editing }: Purc
     return (
       <div className="flex-1">
         <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{label}</label>
-        <input
-          type="number"
-          inputMode="decimal"
+        <NumberInput
           value={value}
           onChange={(e) => editPrice(field, e.target.value)}
           className={`${inputClass} ${isDerived ? 'bg-row-alt' : ''}`}
@@ -464,9 +463,7 @@ export function PurchaseOrderFormModal({ open, onClose, onSaved, editing }: Purc
                   <div className="flex items-end gap-2">
                     <div className="flex-1">
                       <label className="mb-1 block text-[11px] font-semibold text-muted">{PO_FORM.qty}</label>
-                      <input
-                        type="number"
-                        inputMode="decimal"
+                      <NumberInput
                         value={line.qty}
                         onChange={(e) => editLineQty(i, e.target.value)}
                         className={`${inputClass} bg-white`}
@@ -474,9 +471,7 @@ export function PurchaseOrderFormModal({ open, onClose, onSaved, editing }: Purc
                     </div>
                     <div className="flex-1">
                       <label className="mb-1 block text-[11px] font-semibold text-muted">{priceLabel}</label>
-                      <input
-                        type="number"
-                        inputMode="decimal"
+                      <NumberInput
                         value={line.unit_price}
                         onChange={(e) => editLineUnitPrice(i, e.target.value)}
                         className={`${inputClass} bg-white ${line.priceMode === 'total' ? 'bg-row-alt' : ''}`}
@@ -484,9 +479,7 @@ export function PurchaseOrderFormModal({ open, onClose, onSaved, editing }: Purc
                     </div>
                     <div className="flex-1">
                       <label className="mb-1 block text-[11px] font-semibold text-muted">{PO_FORM.lineTotal}</label>
-                      <input
-                        type="number"
-                        inputMode="decimal"
+                      <NumberInput
                         value={line.line_total}
                         onChange={(e) => editLineTotal(i, e.target.value)}
                         className={`${inputClass} bg-white ${line.priceMode === 'unit' ? 'bg-row-alt' : ''}`}

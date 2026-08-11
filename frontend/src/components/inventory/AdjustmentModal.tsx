@@ -4,6 +4,7 @@ import { useToast } from '@/components/shared/Toast';
 import { ADJUSTMENT, COMMON } from '@/labels';
 import { createAdjustment } from '@/services/inventory';
 import type { Item, Site, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 interface AdjustmentModalProps {
   open: boolean;
@@ -103,7 +104,7 @@ export function AdjustmentModal({ open, onClose, onSaved, item, sites, defaultSi
 
       <div>
         <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{ADJUSTMENT.changeAmount}</label>
-        <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className={inputClass} />
+        <NumberInput value={amount} onChange={(e) => setAmount(e.target.value)} className={inputClass} />
         <p className="mt-1 text-[11.5px] text-faint">{ADJUSTMENT.changeHint}</p>
       </div>
 

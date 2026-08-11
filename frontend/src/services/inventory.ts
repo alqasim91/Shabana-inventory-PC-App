@@ -113,6 +113,32 @@ export async function createAdjustment(input: AdjustmentInput): Promise<void> {
   if (error) throw error;
 }
 
+export interface OpeningStockInput {
+  site_id: UUID;
+  item_id: UUID;
+  /** The counted quantity on the shelf — NOT a delta. */
+  qty: number;
+  note?: string | null;
+}
+
+/**
+ * Admin-only: state what an item's stock actually is at a فرع (migration 0035).
+ *
+ * The RPC works out the difference against the ledger and posts it as a single
+ * 'opening' movement, so nothing is ever overwritten. Returns the delta it
+ * wrote — 0 means the ledger already agreed with the count.
+ */
+export async function setOpeningStock(input: OpeningStockInput): Promise<number> {
+  const { data, error } = await supabase.rpc('set_opening_stock', {
+    p_site_id: input.site_id,
+    p_item_id: input.item_id,
+    p_qty: input.qty,
+    p_note: input.note ?? null,
+  });
+  if (error) throw error;
+  return Number(data);
+}
+
 export interface TransferInput {
   from_site: UUID;
   to_site: UUID;

@@ -1,4 +1,4 @@
-import { COMMON } from '@/labels';
+import { currencySymbol } from '@/lib/locale';
 
 export function formatMoney(amount: number): string {
   // Money is NUMERIC(12,2) — show the piasters when they exist. Rounding to
@@ -8,7 +8,9 @@ export function formatMoney(amount: number): string {
     minimumFractionDigits: Number.isInteger(v) ? 0 : 2,
     maximumFractionDigits: 2,
   });
-  return `${label} ${COMMON.currency}`;
+  // Symbol read at call time, not at import time — the organization loads
+  // after the first render, and prices must re-read it once it does.
+  return `${label} ${currencySymbol()}`;
 }
 
 export function formatQty(amount: number, unitLabel?: string): string {

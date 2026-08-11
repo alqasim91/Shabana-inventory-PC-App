@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/shared/Toast';
 import { ORG_SETTINGS } from '@/labels';
+import { CURRENCIES, TIMEZONES } from '@/lib/locale';
 import { getOrganization, updateOrganization } from '@/services/organization';
 
 const inputClass =
@@ -19,6 +20,8 @@ export function OrgIdentityCard() {
   const [businessName, setBusinessName] = useState('');
   const [addressLine, setAddressLine] = useState('');
   const [phoneLine, setPhoneLine] = useState('');
+  const [currency, setCurrency] = useState('EGP');
+  const [timezone, setTimezone] = useState('Africa/Cairo');
   const [submitting, setSubmitting] = useState(false);
 
   // Hydrate the form once the row loads.
@@ -27,6 +30,8 @@ export function OrgIdentityCard() {
     setBusinessName(org.business_name ?? '');
     setAddressLine(org.address_line ?? '');
     setPhoneLine(org.phone_line ?? '');
+    setCurrency(org.currency ?? 'EGP');
+    setTimezone(org.timezone ?? 'Africa/Cairo');
   }, [org]);
 
   async function handleSave() {
@@ -40,6 +45,8 @@ export function OrgIdentityCard() {
         business_name: businessName.trim(),
         address_line: addressLine.trim() || null,
         phone_line: phoneLine.trim() || null,
+        currency,
+        timezone,
       });
       show(ORG_SETTINGS.saved, 'success');
       queryClient.invalidateQueries({ queryKey: ['organization'] });
@@ -90,6 +97,36 @@ export function OrgIdentityCard() {
             placeholder={ORG_SETTINGS.phonePlaceholder}
             className={inputClass}
           />
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <div className="min-w-[180px] flex-1">
+            <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
+              {ORG_SETTINGS.currency}
+            </label>
+            <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputClass}>
+              {CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.name} ({c.symbol})
+                </option>
+              ))}
+            </select>
+            <p className="m-0 mt-1 text-[11.5px] text-faint">{ORG_SETTINGS.currencyHint}</p>
+          </div>
+
+          <div className="min-w-[180px] flex-1">
+            <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
+              {ORG_SETTINGS.timezone}
+            </label>
+            <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputClass}>
+              {TIMEZONES.map((z) => (
+                <option key={z.zone} value={z.zone}>
+                  {z.name}
+                </option>
+              ))}
+            </select>
+            <p className="m-0 mt-1 text-[11.5px] text-faint">{ORG_SETTINGS.timezoneHint}</p>
+          </div>
         </div>
 
         <div className="flex justify-start">

@@ -2,7 +2,7 @@
 -- pc-prelude.sql - PC-edition compatibility layer
 -- ----------------------------------------------------------------------------
 -- Applied by provision.ps1 AFTER platform-bootstrap.sql and BEFORE the
--- application migrations 0001..0033.
+-- application migrations 0001..0035.
 --
 -- WHY THIS FILE EXISTS
 -- The migrations in supabase/migrations/ are vendored verbatim from the cloud
@@ -115,8 +115,8 @@ grant execute on function storage.foldername(text) to anon, authenticated, servi
 --
 -- Handing supabase_auth_admin ownership lets its migrations complete. It does
 -- NOT leave GoTrue's (broken, per-claim-GUC) auth.uid() in place: provisioning
--- applies 0033 AFTER GoTrue has migrated, and the superuser can replace a
--- function regardless of who owns it. See provision.ps1, "why 0033 comes last".
+-- applies pc_local_auth (0100) AFTER GoTrue has migrated, and the superuser can replace a
+-- function regardless of who owns it. See provision.ps1, "why pc_local_auth comes last".
 do $$
 declare r record;
 begin

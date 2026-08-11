@@ -4,6 +4,7 @@ import { useToast } from '@/components/shared/Toast';
 import { INVENTORY, UNIT_LABEL, COMMON } from '@/labels';
 import { createItem, updateItem, type ItemFormInput } from '@/services/inventory';
 import type { Item, UnitType, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 interface ItemFormModalProps {
   open: boolean;
@@ -125,9 +126,7 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
           <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
             {INVENTORY.lowStockThreshold}
           </label>
-          <input
-            type="number"
-            inputMode="decimal"
+          <NumberInput
             value={threshold}
             onChange={(e) => setThreshold(e.target.value)}
             className={inputClass}
@@ -135,9 +134,7 @@ export function ItemFormModal({ open, onClose, onSaved, item }: ItemFormModalPro
         </div>
         <div className="flex-1">
           <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{INVENTORY.salePrice}</label>
-          <input
-            type="number"
-            inputMode="decimal"
+          <NumberInput
             value={salePrice}
             onChange={(e) => setSalePrice(e.target.value)}
             className={inputClass}

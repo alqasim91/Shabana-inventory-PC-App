@@ -8,7 +8,7 @@ import { needsSetup, firstRunBootstrap } from '@/services/setup';
 /**
  * PC EDITION ONLY. The one-time screen shown on a fresh install, before any
  * account exists. Collects the business name, the first admin, and the first
- * فرع, then hands them to pc_first_run_bootstrap (migration 0033), which
+ * فرع, then hands them to pc_first_run_bootstrap (migration 0100), which
  * creates them in a single transaction and mints the admin's auth account.
  *
  * The installer does deliberately NOT collect these — a Windows wizard that

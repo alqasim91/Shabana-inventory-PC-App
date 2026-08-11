@@ -4,6 +4,7 @@ import { useToast } from '@/components/shared/Toast';
 import { REPORTS, COMMON } from '@/labels';
 import { createManualCashMovement, type ManualCashKind } from '@/services/reports';
 import type { Site, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 interface ManualCashModalProps {
   open: boolean;
@@ -129,7 +130,7 @@ export function ManualCashModal({ open, onClose, onSaved, sites, defaultSiteId }
 
       <div>
         <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{REPORTS.manualAmount}</label>
-        <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className={inputClass} />
+        <NumberInput value={amount} onChange={(e) => setAmount(e.target.value)} className={inputClass} />
         {kind === 'adjust' && <p className="mt-1 text-[11.5px] text-faint">{REPORTS.manualAmountHint}</p>}
       </div>
 

@@ -185,7 +185,7 @@ Written 2026-08-09, Sonnet 5 pass. Status snapshot — update as work lands,
 don't treat as current without checking git log.
 
 **Done and reasonably solid:**
-- Repo scaffolded, 32 migrations copied from `alqasim91/Shabana-Inventory`.
+- Repo scaffolded, 35 cloud migrations vendored from `alqasim91/Shabana-Inventory`.
 - `supabase/platform-bootstrap.sql` — vendored verbatim from
   `github.com/supabase/postgres` at commit
   `ff09b101523c6479f37fe1e0d02c5f7e3845104c` (2026-08-09), not written from
@@ -247,7 +247,7 @@ don't treat as current without checking git log.
 **Opus pass (2026-08-09) — DONE, locally tested (full detail in
 [OPUS-HANDOFF.md](OPUS-HANDOFF.md)):**
 - **Single-tenant first-run bootstrap** built as migration
-  `0033_pc_local_auth.sql`: SECURITY DEFINER functions
+  `0100_pc_local_auth.sql`: SECURITY DEFINER functions
   (`pc_needs_setup`, `pc_first_run_bootstrap`, `pc_create_user`) that mint
   `auth.users` directly — no edge runtime, no service key in the browser.
   Replaces both cloud Edge Functions. Tested end-to-end against a local
@@ -255,7 +255,7 @@ don't treat as current without checking git log.
   verifies, one-shot guard holds, admin-gating and duplicate handling
   correct.
 - **The three flagged files reviewed.** Two real bugs found and fixed:
-  `auth.uid()` read a PostgREST-removed per-claim GUC (fixed in 0033 —
+  `auth.uid()` read a PostgREST-removed per-claim GUC (fixed in 0100 —
   would have failed every RLS policy closed); `postgrest.conf` set a
   `jwt-aud` that would have rejected the anon key (removed). `migrate.ps1`
   rollback logic reviewed + the `-Force` hang fixed; `generate-secrets.ps1`

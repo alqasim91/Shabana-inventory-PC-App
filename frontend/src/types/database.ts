@@ -64,7 +64,7 @@ export interface UserAccess {
   siteIds: UUID[];
 }
 export type PaymentParent = 'po' | 'so';
-export type StockSource = 'po_conversion' | 'sale' | 'adjustment' | 'transfer';
+export type StockSource = 'po_conversion' | 'sale' | 'adjustment' | 'transfer' | 'opening';
 export type CashSource = 'payment' | 'manual';
 
 // UUID / date aliases for readability.
@@ -127,6 +127,10 @@ export interface Organization {
   active: boolean;
   created_at: ISODateTime;
   updated_at: ISODateTime;
+  /** ISO 4217 code shown with every amount — display only (migration 0033). */
+  currency: string;
+  /** IANA zone deciding this business's day boundary. */
+  timezone: string;
 }
 
 /** Row shape returned by platform_list_orgs() — metadata only, no financials. */

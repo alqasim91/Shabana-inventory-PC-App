@@ -244,12 +244,18 @@ try {
         & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $preludeSql
         if ($LASTEXITCODE -ne 0) { throw 'PC prelude failed' }
 
-        # 0033 is DEFERRED until after GoTrue has started once - see the
-        # "auth schema" section further down for why. Everything else applies
-        # here, against the temporary Postgres.
+        # pc_local_auth is DEFERRED until after GoTrue has started once - see
+        # the "auth schema" section further down for why. Everything else
+        # applies here, against the temporary Postgres.
+        #
+        # Matched by NAME, not by number. This filter used to read '0033_*',
+        # which silently became wrong the moment the cloud shipped its own
+        # 0033 (currency/timezone): that one would have been deferred and the
+        # auth layer applied too early. PC-only migrations now live at 0100+,
+        # well clear of the cloud's range, and this matches what it means.
         Write-Host 'Applying application migrations...'
         Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name |
-            Where-Object { $_.Name -notlike '0033_*' } | ForEach-Object {
+            Where-Object { $_.Name -notlike '*pc_local_auth*' } | ForEach-Object {
             Write-Host "  -> $($_.Name)"
             & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $_.FullName
             if ($LASTEXITCODE -ne 0) { throw "Migration failed: $($_.Name)" }
@@ -258,7 +264,7 @@ try {
         # Record what's applied, for migrate.ps1 on future upgrades.
         & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "create table if not exists shabana_migrations (filename text primary key, applied_at timestamptz not null default now());"
         Get-ChildItem -Path $migrationsDir -Filter '*.sql' | Sort-Object Name |
-            Where-Object { $_.Name -notlike '0033_*' } | ForEach-Object {
+            Where-Object { $_.Name -notlike '*pc_local_auth*' } | ForEach-Object {
             & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -c "insert into shabana_migrations (filename) values ('$($_.Name)') on conflict do nothing;"
         }
     }
@@ -274,22 +280,22 @@ finally {
 Write-Host 'Registering Windows services...'
 & (Join-Path $PSScriptRoot 'register-services.ps1') -InstallDir $InstallDir
 
-# --- The auth schema, and why 0033 comes last ------------------------------
+# --- The auth schema, and why pc_local_auth comes last ------------------------------
 # GoTrue runs its OWN migrations against the auth schema the first time the
 # service starts. Its 00_init_auth_schema does `create or replace function
 # auth.uid()` with a body that reads the per-claim GUC `request.jwt.claim.sub`
-# - a GUC PostgREST stopped setting years ago. 0033 replaces those functions
+# - a GUC PostgREST stopped setting years ago. 0100 replaces those functions
 # with versions that read the `request.jwt.claims` JSON, and EVERY RLS policy
 # depends on that: with GoTrue's version in place, auth.uid() is always null
 # and every policy fails closed.
 #
-# So the order is forced: GoTrue must migrate FIRST, then 0033 must have the
-# last word. Applying 0033 before starting the services (what we did) meant
+# So the order is forced: GoTrue must migrate FIRST, then 0100 must have the
+# last word. Applying 0100 before starting the services (what we did) meant
 # GoTrue overwrote it - except it never even got that far, because the
 # functions were owned by the bootstrapping superuser and GoTrue connects as
 # supabase_auth_admin, so it died on "must be owner of function uid" and
 # restart-looped forever. pc-prelude.sql now hands it ownership; this section
-# applies 0033 once GoTrue is done.
+# applies 0100 once GoTrue is done.
 #
 # It is also what makes pc_first_run_bootstrap work at all: that function
 # inserts into auth.users columns (email_confirmed_at and friends) that only
@@ -311,8 +317,15 @@ try {
         throw "GoTrue did not migrate the auth schema within 90 seconds - see logs\gotrue.log. Without it there is no login."
     }
 
-    Write-Host 'Applying PC auth layer (0033)...'
-    Get-ChildItem -Path $migrationsDir -Filter '0033_*.sql' | Sort-Object Name | ForEach-Object {
+    Write-Host 'Applying PC auth layer...'
+    $authMigrations = @(Get-ChildItem -Path $migrationsDir -Filter '*pc_local_auth*.sql' | Sort-Object Name)
+    # Assert rather than quietly skip. If this ever matches nothing, GoTrue's
+    # own auth.uid() stays in place, every RLS policy fails closed, and the
+    # install looks fine right up until the owner logs in and sees no data.
+    if ($authMigrations.Count -eq 0) {
+        throw "No pc_local_auth migration found in $migrationsDir - refusing to finish an install whose RLS would fail closed."
+    }
+    $authMigrations | ForEach-Object {
         Write-Host "  -> $($_.Name)"
         & $psql -U postgres -h 127.0.0.1 -p $pgPort -d postgres -v ON_ERROR_STOP=1 -f $_.FullName
         if ($LASTEXITCODE -ne 0) { throw "Migration failed: $($_.Name)" }
@@ -320,7 +333,7 @@ try {
     }
 
     # PostgREST builds its schema cache once, at startup - and it started
-    # BEFORE 0033 ran, so it has never seen pc_needs_setup or
+    # BEFORE 0100 ran, so it has never seen pc_needs_setup or
     # pc_first_run_bootstrap. Calling them returns PGRST202 "could not find the
     # function in the schema cache", which reads like the migration failed when
     # it applied perfectly. NOTIFY is the documented way to make it re-read;

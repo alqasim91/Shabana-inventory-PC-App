@@ -18,7 +18,7 @@ unfixed this makes `auth.uid()` return NULL on every request, so
 `is_admin()`/`current_org()`/`has_perm()` all fail and **every RLS policy
 denies the user their own data** with no error.
 
-**Fix:** migration `0033_pc_local_auth.sql` redefines `auth.uid()`,
+**Fix:** migration `0100_pc_local_auth.sql` redefines `auth.uid()`,
 `auth.role()`, `auth.email()` to Supabase's current canonical form (coalesce
 the legacy per-claim GUC with the JSON claims object). **Verified** against a
 local Postgres: with `request.jwt.claims` set the way PostgREST sets it,
@@ -56,7 +56,7 @@ data** — that's a required Windows test before trusting it on a customer.
 
 Chosen **approach (A)**: SECURITY DEFINER SQL functions that write
 `auth.users` directly, no edge runtime, no service key in the browser.
-All in `supabase/migrations/0033_pc_local_auth.sql`.
+All in `supabase/migrations/0100_pc_local_auth.sql`.
 
 Verified against the pinned versions by reading the source, not assuming:
 - **GoTrue v2.195 self-migrates on startup** (`cmd/root_cmd.go`: the no-arg
@@ -68,8 +68,8 @@ Verified against the pinned versions by reading the source, not assuming:
   bcrypt check on `encrypted_password`. So a hand-inserted user with
   `aud='authenticated'`, `role='authenticated'`, `email_confirmed_at` set,
   and a `crypt(pw, gen_salt('bf'))` hash is sufficient — which is exactly
-  what 0033 inserts (via dynamic SQL, because GoTrue adds `email_confirmed_at`
-  / `is_sso_user` only at its first migration, after 0033 is *created*).
+  what 0100 inserts (via dynamic SQL, because GoTrue adds `email_confirmed_at`
+  / `is_sso_user` only at its first migration, after 0100 is *created*).
 
 **Functions:**
 - `pc_needs_setup()` — anon, returns "no org exists yet".
@@ -108,7 +108,7 @@ will find them).
 ## 3. What genuinely remains
 
 - **A real Windows run.** Nothing here has run on Windows. The whole chain —
-  initdb → bootstrap → 33 migrations → GoTrue self-migrate → services up →
+  initdb → bootstrap → 37 migrations → GoTrue self-migrate → services up →
   `/setup` → create admin → **log in** → use the app — has been verified
   piece by piece but never end-to-end on the actual stack. First real signal
   is the CI build log, then an install on a Windows VM.

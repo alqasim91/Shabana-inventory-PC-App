@@ -1,4 +1,4 @@
-import { CONTACT_BALANCE, COMMON } from '@/labels';
+import { CONTACT_BALANCE } from '@/labels';
 import { formatMoney } from '@/components/shared/MoneyDisplay';
 
 export type ContactBalanceStatus = 'receivable' | 'payable' | 'settled';
@@ -25,7 +25,7 @@ export function contactBalanceInfo(balance: number): ContactBalanceInfo {
       status: 'settled',
       tag: CONTACT_BALANCE.settledTag,
       sub: CONTACT_BALANCE.settledSub,
-      amountLabel: `٠ ${COMMON.currency}`,
+      amountLabel: formatMoney(0),
       tone: 'default',
     };
   }

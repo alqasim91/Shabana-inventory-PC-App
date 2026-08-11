@@ -16,6 +16,7 @@ import {
   type SalesOrderDetail,
 } from '@/services/sales';
 import type { SoDiscountType, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 interface SalesOrderFormModalProps {
   open: boolean;
@@ -332,9 +333,7 @@ export function SalesOrderFormModal({ open, onClose, onSaved, editing }: SalesOr
                 </div>
                 <div className="w-20">
                   <label className="mb-1 block text-[11px] font-semibold text-muted">{SO_FORM.qty}</label>
-                  <input
-                    type="number"
-                    inputMode="decimal"
+                  <NumberInput
                     value={line.qty}
                     onChange={(e) => updateLine(i, { qty: e.target.value })}
                     className={`${inputClass} bg-white ${short ? 'border-red-500' : ''}`}
@@ -342,9 +341,7 @@ export function SalesOrderFormModal({ open, onClose, onSaved, editing }: SalesOr
                 </div>
                 <div className="w-24">
                   <label className="mb-1 block text-[11px] font-semibold text-muted">{priceLabel}</label>
-                  <input
-                    type="number"
-                    inputMode="decimal"
+                  <NumberInput
                     value={line.unit_price}
                     onChange={(e) => updateLine(i, { unit_price: e.target.value })}
                     className={`${inputClass} bg-white`}
@@ -411,9 +408,7 @@ export function SalesOrderFormModal({ open, onClose, onSaved, editing }: SalesOr
             ))}
           </div>
           {discountType !== 'none' && (
-            <input
-              type="number"
-              inputMode="decimal"
+            <NumberInput
               value={discountValue}
               onChange={(e) => setDiscountValue(e.target.value)}
               placeholder={

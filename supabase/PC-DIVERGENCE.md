@@ -33,7 +33,7 @@ provides a schema-compatible shim.
 
 > The shim exists so the migrations apply and the org-isolation policies stay
 > enforceable. Nothing reads or writes through it: attachments are handled by
-> `0034_pc_local_storage.sql` instead — see below.
+> `0101_pc_local_storage.sql` instead — see below.
 
 ---
 
@@ -60,7 +60,20 @@ tenant provisioned from empty. Worth fixing there too — not done from this rep
 
 ## PC-only migrations
 
-### `0034_pc_local_storage.sql`
+> **Numbering rule: PC-only migrations live at `0100+`, never in the cloud's range.**
+>
+> They used to be numbered `0033_pc_local_auth.sql` and `0034_pc_local_storage.sql`. Then the
+> cloud shipped its own `0033_currency_timezone.sql` and `0034_stock_source_opening.sql`
+> and the numbers collided head-on. That was not merely untidy: `provision.ps1`
+> selected the deferred auth migration with the glob `0033_*`, so after the sync it
+> would have deferred the cloud's *currency* migration and **never applied the auth
+> layer at all** — leaving GoTrue's `auth.uid()` in place, every RLS policy failing
+> closed, and an install that looks healthy until the owner logs in to an empty app.
+>
+> Both scripts now select it by name (`*pc_local_auth*`) and `provision.ps1` throws
+> if that matches nothing. Keep new PC-only migrations at `0102+`.
+
+### `0101_pc_local_storage.sql`
 Attachment **bytes** live in Postgres (`pc_file_bytes`), reached through
 `pc_file_put` / `pc_file_get` / `pc_file_delete`, because the PC edition ships
 no storage service. `order_attachments` remains the single source of metadata;
@@ -80,7 +93,7 @@ One real consequence: attachments are inside `pg_dump`, so a backup file is
 genuinely the whole shop — and database size now grows with scans and photos.
 The 10 MB per-file ceiling from `0022` is enforced in `pc_file_put`.
 
-### `0033_pc_local_auth.sql`
+### `0100_pc_local_auth.sql`
 Exists only here. Replaces the cloud Edge Functions (no Deno runtime on a shop
 PC) with SECURITY DEFINER SQL, and redefines `auth.uid()/role()/email()` to read
 the `request.jwt.claims` JSON GUC — PostgREST 16 no longer sets the per-claim

@@ -7,8 +7,10 @@ import { PermGate } from '@/components/shared/PermGate';
 import { MoneyDisplay, formatQty } from '@/components/shared/MoneyDisplay';
 import { ItemFormModal } from '@/components/inventory/ItemFormModal';
 import { TransferModal } from '@/components/inventory/TransferModal';
+import { OpeningStockModal } from '@/components/inventory/OpeningStockModal';
 import { useSite } from '@/contexts/SiteContext';
-import { INVENTORY, UNIT_LABEL } from '@/labels';
+import { useAuth } from '@/contexts/AuthContext';
+import { INVENTORY, OPENING, UNIT_LABEL } from '@/labels';
 import { listItems, listInventoryRows, type InventoryRow } from '@/services/inventory';
 
 /** A row is "منخفض" only when a threshold is actually configured for the item. */
@@ -18,7 +20,9 @@ export function Inventory() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { sites, selectedSiteIdForQuery } = useSite();
+  const { profile } = useAuth();
   const [showAddItem, setShowAddItem] = useState(false);
+  const [showOpening, setShowOpening] = useState(false);
   const [transferPreset, setTransferPreset] = useState<{ itemId?: string; siteId?: string } | null>(null);
 
   const { data: items = [] } = useQuery({ queryKey: ['items'], queryFn: listItems });
@@ -133,8 +137,18 @@ export function Inventory() {
         title={INVENTORY.title}
         subtitle={INVENTORY.subtitle}
         actions={
-          <PermGate need="inventory.items">
-            <div className="flex gap-2">
+          <div className="flex gap-2">
+            {/* Opening balances are admin-only (migration 0035) — deliberately
+                not behind a permission toggle, since this overrides the ledger. */}
+            {profile?.role === 'admin' && (
+              <button
+                onClick={() => setShowOpening(true)}
+                className="rounded-[10px] border border-border bg-white px-4 py-2.5 text-[13px] font-bold text-ink"
+              >
+                {OPENING.button}
+              </button>
+            )}
+            <PermGate need="inventory.items">
               <button
                 onClick={() => setShowAddItem(true)}
                 className="rounded-[10px] border border-border bg-white px-4 py-2.5 text-[13px] font-bold text-ink"
@@ -153,8 +167,8 @@ export function Inventory() {
                 </svg>
                 <span>{INVENTORY.transferBetweenSites}</span>
               </button>
-            </div>
-          </PermGate>
+            </PermGate>
+          </div>
         }
       />
 
@@ -173,6 +187,17 @@ export function Inventory() {
         onClose={() => setShowAddItem(false)}
         onSaved={() => {
           queryClient.invalidateQueries({ queryKey: ['items'] });
+          queryClient.invalidateQueries({ queryKey: ['inventory-rows'] });
+        }}
+      />
+
+      <OpeningStockModal
+        open={showOpening}
+        onClose={() => setShowOpening(false)}
+        items={items}
+        sites={sites}
+        defaultSiteId={selectedSiteIdForQuery ?? undefined}
+        onSaved={() => {
           queryClient.invalidateQueries({ queryKey: ['inventory-rows'] });
         }}
       />

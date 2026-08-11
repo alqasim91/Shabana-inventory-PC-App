@@ -5,6 +5,7 @@ import { formatQty } from '@/components/shared/MoneyDisplay';
 import { TRANSFER, UNIT_LABEL, COMMON } from '@/labels';
 import { createTransfer, getStock } from '@/services/inventory';
 import type { Item, Site, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 interface TransferModalProps {
   open: boolean;
@@ -172,9 +173,7 @@ export function TransferModal({
 
       <div>
         <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{TRANSFER.qty}</label>
-        <input
-          type="number"
-          inputMode="decimal"
+        <NumberInput
           value={qty}
           onChange={(e) => setQty(e.target.value)}
           placeholder={TRANSFER.qtyPlaceholder}

@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase';
 
 // PC EDITION ONLY. First-run provisioning, the local stand-in for the cloud
 // create-organization Edge Function. Backed by SQL functions in migration
-// 0033 (pc_needs_setup / pc_first_run_bootstrap), both callable by anon
+// 0100 (pc_needs_setup / pc_first_run_bootstrap), both callable by anon
 // because on a fresh install nobody is logged in yet. pc_first_run_bootstrap
 // is strictly one-shot server-side (it refuses the moment any organization
 // exists), so exposing it to anon cannot create a second tenant or hijack an

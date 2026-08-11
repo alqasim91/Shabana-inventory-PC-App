@@ -67,7 +67,10 @@ export function Sidebar() {
       ))}
 
       <div className="mt-auto border-t border-white/10 pt-4 text-[11.5px] text-teal-faint">
-        مركز شبانة التجاري &middot; الإصدار 0.1.0
+        {/* The APP's name, not the business's — the tenant's own name is already
+            at the top of this sidebar, and hardcoding one shop's name here read
+            as if every business were running مركز شبانة التجاري. */}
+        {APP_NAME} &middot; الإصدار 0.1.0
       </div>
     </aside>
   );

@@ -14,6 +14,7 @@ import {
   listVendorCreditMovements,
 } from '@/services/vendorCredit';
 import type { CreditSource, CreditTender, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 const SOURCE_LABEL: Record<CreditSource, string> = {
   overpayment: VENDOR_CREDIT.source_overpayment,
@@ -204,9 +205,7 @@ export function VendorCreditCard({ contactId, contactName, onChanged }: VendorCr
         )}
         <div>
           <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{VENDOR_CREDIT.amount}</label>
-          <input
-            type="number"
-            inputMode="decimal"
+          <NumberInput
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder={VENDOR_CREDIT.amount}

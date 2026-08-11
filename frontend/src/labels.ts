@@ -282,11 +282,12 @@ export const STOCK_SOURCE_LABEL: Record<StockSource, string> = {
   sale: 'بيع',
   adjustment: 'تسوية',
   transfer: 'نقل',
+  opening: 'رصيد افتتاحي',
 };
 
 export const INVENTORY = {
   title: 'المخزون',
-  subtitle: 'أرصدة الأصناف في كل فروع مركز شبانة التجاري',
+  subtitle: 'أرصدة الأصناف في كل الفروع',
   addItem: 'إضافة صنف',
   editItem: 'تعديل بيانات الصنف',
   transferBetweenSites: 'نقل بين الفروع',
@@ -349,6 +350,28 @@ export const ADJUSTMENT = {
   submit: 'تنفيذ التسوية',
   success: 'تم تسجيل التسوية',
   genericError: 'تعذر تنفيذ التسوية، حاول مرة أخرى',
+} as const;
+
+export const OPENING = {
+  title: 'الأرصدة الافتتاحية',
+  button: 'رصيد افتتاحي',
+  intro:
+    'اكتب الكمية الموجودة فعليًا لكل صنف في هذا الفرع، والتطبيق يسجّل الفرق تلقائيًا. اترك الخانة فارغة لأي صنف لا تريد تغييره.',
+  site: 'الفرع',
+  colItem: 'الصنف',
+  colCurrent: 'الرصيد الحالي',
+  colActual: 'الرصيد الفعلي',
+  colDiff: 'الفرق',
+  note: 'ملاحظة (اختياري)',
+  notePlaceholder: 'مثال: جرد بداية التشغيل ٢٠٢٦',
+  noChanges: 'لم تغيّر أي رصيد بعد',
+  negative: 'الرصيد الفعلي لا يمكن أن يكون سالبًا',
+  submit: 'حفظ الأرصدة',
+  confirm: (n: number) => `سيتم تعديل رصيد ${n.toLocaleString('ar-EG')} صنف. متابعة؟`,
+  confirmSubmit: 'تأكيد الحفظ',
+  success: (n: number) => `تم ضبط رصيد ${n.toLocaleString('ar-EG')} صنف`,
+  noItems: 'لا توجد أصناف بعد — أضف الأصناف أولًا',
+  genericError: 'تعذر حفظ الأرصدة، حاول مرة أخرى',
 } as const;
 
 export const PURCHASES = {
@@ -857,7 +880,7 @@ export const USERS = {
 
 export const SITES_ADMIN = {
   title: 'الإعدادات — الفروع',
-  subtitle: 'إدارة فروع مركز شبانة التجاري',
+  subtitle: 'إدارة فروع المنشأة',
   addSite: 'إضافة فرع',
   editSite: 'تعديل الفرع',
   colName: 'اسم الفرع',
@@ -926,6 +949,10 @@ export const ORG_SETTINGS = {
   addressPlaceholder: 'المدينة، الشارع، رقم المبنى',
   phoneLine: 'الهاتف',
   phonePlaceholder: 'هاتف: 057-0000000',
+  currency: 'العملة',
+  currencyHint: 'تظهر مع كل المبالغ في الفواتير وكشوف الحساب',
+  timezone: 'المنطقة الزمنية',
+  timezoneHint: 'تحدد بداية ونهاية اليوم في لوحة التحكم والخزينة',
   nameRequired: 'اسم النشاط مطلوب',
   saved: 'تم حفظ بيانات النشاط',
   saveError: 'تعذر حفظ بيانات النشاط',

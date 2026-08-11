@@ -21,6 +21,7 @@ import {
   overpayPurchaseOrder,
 } from '@/services/vendorCredit';
 import type { ContactPaymentMethod, PaymentMethod, PaymentParent, Site, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 interface PaymentsPanelProps {
   parentType: PaymentParent;
@@ -327,9 +328,7 @@ export function PaymentsPanel({
         <div className="mt-3.5 flex flex-col gap-2 border-t border-border-soft pt-3.5">
           <div>
             <label className="mb-1 block text-[11.5px] font-semibold text-muted">{PAYMENTS.amount}</label>
-            <input
-              type="number"
-              inputMode="decimal"
+            <NumberInput
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder={PAYMENTS.amount}
@@ -422,9 +421,7 @@ export function PaymentsPanel({
             </button>
           ) : (
             <div className="flex flex-col gap-2">
-              <input
-                type="number"
-                inputMode="decimal"
+              <NumberInput
                 value={creditAmount}
                 onChange={(e) => setCreditAmount(e.target.value)}
                 placeholder={isSO ? PAYMENTS.applyAmount : PAYMENTS.applyAmountVendor}

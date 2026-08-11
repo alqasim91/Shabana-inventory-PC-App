@@ -310,7 +310,7 @@ jobs:
           $sites = Invoke-RestMethod -Uri "$base/rest/v1/sites?select=name_ar" -Headers $auth
           if ($sites.Count -lt 1) { throw 'Authenticated read of sites returned nothing - RLS or auth.uid() is wrong' }
 
-          # 4. Local file storage (migration 0034), which replaces Supabase
+          # 4. Local file storage (migration 0101), which replaces Supabase
           #    Storage on a PC. Write bytes, prove the read is gated on an
           #    attachment row rather than on knowing the path, then delete.
           $org = (Invoke-RestMethod -Uri "$base/rest/v1/organization?select=id" -Headers $auth)[0].id

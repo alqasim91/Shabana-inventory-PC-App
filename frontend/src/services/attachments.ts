@@ -5,7 +5,7 @@ import type { OrderAttachment, OrderDocType, UUID } from '@/types/database';
 /**
  * PC EDITION. The cloud build of this file talks to Supabase Storage; this one
  * keeps the bytes in Postgres and reaches them through the pc_file_* functions
- * in migration 0034. See that migration's header for why there is no storage
+ * in migration 0101. See that migration's header for why there is no storage
  * service on a shop PC.
  *
  * The exported surface is deliberately identical to the cloud version, so

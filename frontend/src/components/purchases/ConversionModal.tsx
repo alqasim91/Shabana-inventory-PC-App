@@ -5,6 +5,7 @@ import { formatQty } from '@/components/shared/MoneyDisplay';
 import { CONVERSION_FORM, UNIT_LABEL, COMMON } from '@/labels';
 import { addConversion } from '@/services/purchases';
 import type { Item, Site, UnitType, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 interface ConversionModalProps {
   open: boolean;
@@ -144,13 +145,13 @@ export function ConversionModal({ open, onClose, onSaved, poId, remainingKg, ite
 
       <div>
         <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{CONVERSION_FORM.kgConsumed}</label>
-        <input type="number" inputMode="decimal" value={kgConsumed} onChange={(e) => setKgConsumed(e.target.value)} className={inputClass} />
+        <NumberInput value={kgConsumed} onChange={(e) => setKgConsumed(e.target.value)} className={inputClass} />
       </div>
 
       <div className="flex gap-3">
         <div className="flex-1">
           <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{CONVERSION_FORM.outputQty}</label>
-          <input type="number" inputMode="decimal" value={outputQty} onChange={(e) => setOutputQty(e.target.value)} className={inputClass} />
+          <NumberInput value={outputQty} onChange={(e) => setOutputQty(e.target.value)} className={inputClass} />
         </div>
         <div className="flex-1">
           <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{CONVERSION_FORM.outputUnit}</label>

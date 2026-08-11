@@ -9,6 +9,7 @@ import { formatDateShort } from '@/lib/date';
 import { CREDIT, COMMON, PAYMENT_METHOD_LABEL } from '@/labels';
 import { depositCredit, refundCredit, getCreditBalance, listCreditMovements } from '@/services/credit';
 import type { CreditSource, CreditTender, UUID } from '@/types/database';
+import { NumberInput } from '@/components/shared/NumberInput';
 
 const SOURCE_LABEL: Record<CreditSource, string> = {
   overpayment: CREDIT.source_overpayment,
@@ -193,9 +194,7 @@ export function CreditCard({ contactId, contactName, onChanged }: CreditCardProp
         )}
         <div>
           <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">{CREDIT.amount}</label>
-          <input
-            type="number"
-            inputMode="decimal"
+          <NumberInput
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder={CREDIT.amount}
