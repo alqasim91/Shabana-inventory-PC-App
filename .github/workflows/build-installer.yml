@@ -221,6 +221,15 @@ jobs:
           SHABANA_NONINTERACTIVE: '1'
         run: |
           $ErrorActionPreference = 'Stop'
+          # Make the runner look like a SHOP PC. GitHub's Windows image ships
+          # PostgreSQL preinstalled and on PATH, which quietly supplied
+          # libpq.dll to PostgREST - so the stack passed here while dying on a
+          # clean machine with STATUS_DLL_NOT_FOUND and an empty log. Strip
+          # those entries so anything the install needs must come from the
+          # install itself.
+          $env:PATH = (($env:PATH -split ';') | Where-Object { $_ -notmatch 'postgres' }) -join ';'
+          Write-Host 'PostgreSQL removed from PATH for this job.'
+
           # Under ProgramData, like a real install - not RUNNER_TEMP, whose
           # ACLs are not representative of a customer's machine.
           $root = 'C:\ProgramData\ShabanaSmoke'

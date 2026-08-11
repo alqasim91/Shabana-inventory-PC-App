@@ -113,6 +113,23 @@ Set-Service -Name 'ShabanaPostgres' -StartupType Automatic
 
 # --- PostgREST, GoTrue, Caddy: via NSSM ----------------------------------
 
+# PostgREST links against libpq DYNAMICALLY on Windows. Without it the process
+# dies instantly with exit code 0xC0000135 (STATUS_DLL_NOT_FOUND), before it
+# can write one line to its log - so the service shows as Paused, the API
+# 502s, and nothing anywhere says why.
+#
+# This never appeared in CI because GitHub's Windows runners ship PostgreSQL
+# preinstalled and on PATH, so libpq.dll was always there by accident. A
+# customer's machine has no such thing.
+#
+# We already ship the whole Postgres bin directory, so copy its DLLs next to
+# postgrest.exe: Windows searches the executable's own directory first, which
+# makes this independent of PATH, of the service account's environment, and of
+# whatever else is installed on the machine.
+$pgrstDir = Join-Path $InstallDir 'bin\postgrest'
+Copy-Item -Path (Join-Path $pgBin '*.dll') -Destination $pgrstDir -Force
+Write-Host "Copied $((Get-ChildItem (Join-Path $pgrstDir '*.dll')).Count) runtime DLL(s) next to postgrest.exe."
+
 Install-NssmService -Name 'ShabanaPostgREST' `
     -Exe (Join-Path $InstallDir 'bin\postgrest\postgrest.exe') `
     -Arguments (Join-Path $configDir 'postgrest.conf') `

@@ -56,7 +56,7 @@ export function Login() {
   });
 
   // PC EDITION: detect a fresh, unclaimed install (no organization yet).
-  const { data: freshInstall } = useQuery({
+  const { data: freshInstall, isError: setupCheckFailed } = useQuery({
     queryKey: ['pc-needs-setup'],
     queryFn: needsSetup,
     // Seconds, not a day. This value decides a REDIRECT, and it flips exactly
@@ -76,6 +76,12 @@ export function Login() {
   // one-time setup screen instead of showing a login nobody can pass. Once an
   // org exists this returns false and the login form shows normally.
   if (!loading && !session && freshInstall) return <Navigate to="/setup" replace />;
+
+  // The check itself failed, which on a PC install means the local API is not
+  // answering - PostgREST down, or the whole stack still starting. Without
+  // this the page renders a perfectly normal login form that can never
+  // succeed, and the only clue is a 502 in a console nobody opens.
+  const apiUnreachable = !loading && !session && setupCheckFailed;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -166,6 +172,11 @@ export function Login() {
             />
           </div>
 
+          {apiUnreachable && (
+            <p className="m-0 rounded-[9px] border border-amber bg-amber-soft px-3 py-2 text-[12.5px] font-semibold text-amber-soft-text">
+              {AUTH.serviceUnreachable}
+            </p>
+          )}
           {error && <p className="m-0 text-[13px] font-semibold text-red-600">{error}</p>}
 
           <button

@@ -27,6 +27,9 @@ export const AUTH = {
   // Shown only until the business is known (or when it can't be: the generic
   // /login door). It must NOT name a specific business — every client sees it.
   loginSubtitle: 'إدارة المخزون والمبيعات',
+  // PC edition: the local API is not answering. Shown instead of letting the
+  // owner type credentials into a form that cannot possibly succeed.
+  serviceUnreachable: 'تعذّر الاتصال بخدمة البرنامج على هذا الجهاز. انتظر لحظة ثم أعد تحميل الصفحة، أو أعد تشغيل الجهاز.',
   email: 'البريد الإلكتروني',
   username: 'اسم المستخدم',
   usernamePlaceholder: 'اسم المستخدم',

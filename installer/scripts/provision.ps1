@@ -362,11 +362,22 @@ URL=$appUrl
 # window is still on screen and the logs are one line away.
 Write-Host ''
 Write-Host "Checking that the application is responding on $appUrl ..."
+# Asking Caddy for the home page proves almost nothing: it serves that from
+# static files whether or not the database is reachable. An install where
+# PostgREST is dead answers this check happily and then hands the customer a
+# login screen that cannot work. So check the API the app actually depends on -
+# a real RPC through PostgREST, and GoTrue's health endpoint.
+$anonKey = (Get-Content (Join-Path $configDir 'anon.key') -Raw).Trim()
+$apiHeaders = @{ apikey = $anonKey; Authorization = "Bearer $anonKey"; 'Content-Type' = 'application/json' }
 $ok = $false
 for ($i = 0; $i -lt 20; $i++) {
     try {
-        $resp = Invoke-WebRequest -Uri $appUrl -UseBasicParsing -TimeoutSec 3
-        if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 500) { $ok = $true; break }
+        Invoke-WebRequest -Uri $appUrl -UseBasicParsing -TimeoutSec 3 | Out-Null
+        Invoke-WebRequest -Uri "$appUrl/auth/v1/health" -UseBasicParsing -TimeoutSec 3 | Out-Null
+        Invoke-RestMethod -Method Post -Uri "$appUrl/rest/v1/rpc/pc_needs_setup" `
+            -Headers $apiHeaders -Body '{}' -TimeoutSec 5 | Out-Null
+        $ok = $true
+        break
     } catch { }
     Start-Sleep -Seconds 2
 }

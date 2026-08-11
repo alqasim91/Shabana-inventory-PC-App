@@ -28,9 +28,17 @@ export function FirstRunSetup() {
   const [needed, setNeeded] = useState<boolean | null>(null);
   useEffect(() => {
     let alive = true;
-    void needsSetup().then((n) => {
-      if (alive) setNeeded(n);
-    });
+    void needsSetup()
+      .then((n) => {
+        if (alive) setNeeded(n);
+      })
+      .catch(() => {
+        // Could not reach the API. Show the form rather than leaving the
+        // submit button disabled forever with no explanation - the RPC behind
+        // it is one-shot and guarded server-side, so offering it costs
+        // nothing, and a real failure now surfaces as an error on submit.
+        if (alive) setNeeded(true);
+      });
     return () => {
       alive = false;
     };

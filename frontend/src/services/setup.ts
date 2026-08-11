@@ -12,9 +12,15 @@ import { supabase } from '@/lib/supabase';
 export async function needsSetup(): Promise<boolean> {
   const { data, error } = await supabase.rpc('pc_needs_setup');
   if (error) {
-    // Fail SAFE: if we can't tell, assume setup is NOT needed rather than
-    // exposing the setup form on a machine that may already be provisioned.
-    return false;
+    // THROW, do not return false.
+    //
+    // This used to swallow the error and answer "no setup needed", on the
+    // reasoning that showing the setup form on an already-provisioned machine
+    // would be worse. In practice it turned every backend outage into a login
+    // screen for an account that cannot exist, with nothing on screen, in the
+    // console, or in any log to say the API was unreachable. Callers can now
+    // tell "this install is claimed" from "I could not ask", and say so.
+    throw error;
   }
   return data === true;
 }
