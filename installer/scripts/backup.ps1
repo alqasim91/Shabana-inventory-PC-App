@@ -59,11 +59,80 @@ try {
 # safety. Record success/failure so the in-app "last backup" badge can warn
 # when the job silently stops working.
 $sizeOk = (Get-Item $outFile).Length -gt 1024
+
+# --- Off-site copy ---------------------------------------------------------
+# The dump above lives on the same machine as the database it came from, so it
+# survives a bad migration and nothing else. This sends an encrypted copy
+# somewhere the fire cannot reach. Configured by setup-offsite.ps1; absent
+# until someone does that, and its absence must never fail the local backup.
+#
+# One direction only. This is a backup, not a sync: nothing is ever read back
+# automatically, and the copy at the far end is never authoritative.
+$offsite = [ordered]@{ configured = $false; success = $null; target = $null; error = $null }
+$offsiteConfig = Join-Path $InstallDir 'config\offsite.json'
+if ($sizeOk -and (Test-Path $offsiteConfig)) {
+    $offsite.configured = $true
+    try {
+        $cfg = Get-Content $offsiteConfig -Raw | ConvertFrom-Json
+        $offsite.target = $cfg.target
+        $passphrase = (Get-Content (Join-Path $InstallDir 'config\offsite.key') -Raw).Trim()
+        if (-not $passphrase) { throw 'offsite.key is empty - re-run setup-offsite.ps1.' }
+
+        . (Join-Path $PSScriptRoot 'lib-crypto.ps1')
+        $encFile = "$outFile.enc"
+        Protect-ShbFile -InFile $outFile -OutFile $encFile -Passphrase $passphrase
+
+        $encName = Split-Path -Leaf $encFile
+        if ($cfg.is_rclone) {
+            & rclone.exe copyto $encFile "$($cfg.target)/$encName" 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "rclone copy to $($cfg.target) failed (exit $LASTEXITCODE)" }
+            # --min-age prunes by the remote's own timestamps; no local list needed.
+            & rclone.exe delete $cfg.target --include 'shabana-*.dump.enc' --min-age "$($cfg.keep_days)d" 2>&1 | Out-Null
+        } else {
+            # Copy to a .part name and rename, so a run interrupted by the PC
+            # being switched off cannot leave a truncated file that looks whole.
+            $dest = Join-Path $cfg.target $encName
+            Copy-Item -Path $encFile -Destination "$dest.part" -Force
+            Move-Item -Path "$dest.part" -Destination $dest -Force
+            Get-ChildItem -Path $cfg.target -Filter 'shabana-*.dump.enc' -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$cfg.keep_days) } |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+
+        # The encrypted copy is a transport artefact; the local dump stays
+        # plaintext so restore.ps1 needs no passphrase on this machine.
+        Remove-Item $encFile -Force -ErrorAction SilentlyContinue
+        $offsite.success = $true
+    } catch {
+        # Deliberately not fatal. A dead internet connection or an unplugged NAS
+        # must not throw away a good local backup - but it MUST be visible, so
+        # it lands in the status file the dashboard badge reads.
+        $offsite.success = $false
+        $offsite.error = "$_"
+        Remove-Item "$outFile.enc" -Force -ErrorAction SilentlyContinue
+        Write-Host "Off-site copy FAILED: $_"
+    }
+}
+
+# The status files are written as ASCII (see the note below), and both the
+# destination path and an rclone error message can legitimately contain Arabic
+# or other non-ASCII text. Fold it down here rather than betting on how this
+# PowerShell version escapes it - a mangled byte in this file makes the
+# dashboard's fetch().json() throw, and the badge then reports nothing at all.
+function ConvertTo-AsciiSafe {
+    param([string]$Text)
+    if (-not $Text) { return $Text }
+    return ($Text -replace '[^\x20-\x7E]', '?')
+}
+$offsite.target = ConvertTo-AsciiSafe $offsite.target
+$offsite.error  = ConvertTo-AsciiSafe $offsite.error
+
 $status = [ordered]@{
     timestamp = (Get-Date).ToString('o')
-    file      = $outFile
+    file      = ConvertTo-AsciiSafe $outFile
     success   = $sizeOk
-} | ConvertTo-Json
+    offsite   = $offsite
+} | ConvertTo-Json -Depth 5
 
 # Two copies. One next to the dumps (for a human browsing the backup folder),
 # and one at a FIXED, Caddy-served path under InstallDir\public that the

@@ -205,6 +205,62 @@ jobs:
           if ($bad) { throw 'PowerShell script validation failed.' }
           Write-Host 'All scripts parse cleanly and are pure ASCII.'
 
+      # An off-site backup that cannot be decrypted is not a backup - and the
+      # day you find out is the day the shop PC is already gone. So the crypto
+      # is round-tripped on every build, under Windows PowerShell 5.1 (NOT
+      # pwsh): 5.1 is what actually runs on the customer's machine, it is a
+      # different .NET, and it is the reason AES-GCM is not used here.
+      - name: Off-site backup crypto round-trip
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . pc-app\installer\scripts\lib-crypto.ps1
+
+          # Bigger than the 1MB streaming buffer, so the multi-block path and
+          # the final partial block are both exercised.
+          $plain = "$env:TEMP\shb-crypto-plain.bin"
+          $bytes = New-Object byte[] 3145739
+          (New-Object Random 1234).NextBytes($bytes)
+          [System.IO.File]::WriteAllBytes($plain, $bytes)
+          $enc = "$env:TEMP\shb-crypto.enc"
+          $out = "$env:TEMP\shb-crypto-out.bin"
+          $pass = 'CORRECT-HORSE-BATTERY-STAPLE-2026'
+
+          Protect-ShbFile -InFile $plain -OutFile $enc -Passphrase $pass
+          Unprotect-ShbFile -InFile $enc -OutFile $out -Passphrase $pass
+
+          $a = (Get-FileHash $plain -Algorithm SHA256).Hash
+          $b = (Get-FileHash $out   -Algorithm SHA256).Hash
+          if ($a -ne $b) { throw "Round-trip corrupted the file. $a != $b" }
+          Write-Host "  round-trip OK ($($bytes.Length) bytes)"
+
+          # The ciphertext must not be the plaintext.
+          if ((Get-Item $enc).Length -le 88) { throw 'Encrypted file is impossibly small.' }
+          $encBytes = [System.IO.File]::ReadAllBytes($enc)
+          if ([System.Text.Encoding]::ASCII.GetString($encBytes[0..7]) -ne 'SHBNAES1') { throw 'Bad magic header.' }
+
+          # Wrong passphrase must be REFUSED, not silently produce garbage.
+          Remove-Item $out -Force
+          $refused = $false
+          try { Unprotect-ShbFile -InFile $enc -OutFile $out -Passphrase 'wrong-passphrase' }
+          catch { $refused = $true }
+          if (-not $refused) { throw 'A wrong passphrase was accepted.' }
+          if (Test-Path $out) { throw 'A wrong passphrase left a partial file behind.' }
+          Write-Host '  wrong passphrase rejected, no partial output'
+
+          # A single flipped byte in the cloud copy must be detected.
+          $tampered = "$env:TEMP\shb-crypto-tampered.enc"
+          $encBytes[200] = $encBytes[200] -bxor 0xFF
+          [System.IO.File]::WriteAllBytes($tampered, $encBytes)
+          $caught = $false
+          try { Unprotect-ShbFile -InFile $tampered -OutFile $out -Passphrase $pass }
+          catch { $caught = $true }
+          if (-not $caught) { throw 'Tampered ciphertext was accepted - the MAC is not working.' }
+          Write-Host '  tampered ciphertext rejected'
+
+          Remove-Item $plain, $enc, $tampered -Force -ErrorAction SilentlyContinue
+          Write-Host 'Off-site backup encryption verified end to end.'
+
       # Run the ENTIRE install on the runner - which is real Windows, admin,
       # with real services - and then drive the app over HTTP exactly as a
       # browser would. Every failure this project has shipped to a customer so

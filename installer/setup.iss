@@ -76,6 +76,10 @@ Name: "{autoprograms}\{#MyAppName}\تصدير تقرير المشكلة"; Filena
 ; not a default they discover later.
 Name: "{autoprograms}\{#MyAppName}\تفعيل الرابط العام"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\setup-tunnel.ps1"" -InstallDir ""{app}"""
 Name: "{autoprograms}\{#MyAppName}\إيقاف الرابط العام"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\setup-tunnel.ps1"" -InstallDir ""{app}"" -Disable"
+; Off-site backup needs a destination from the owner (a drive letter, a share,
+; or an rclone remote), so it opens a prompt rather than running headless.
+Name: "{autoprograms}\{#MyAppName}\إعداد النسخ الاحتياطي الخارجي"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\installer\scripts\setup-offsite.ps1' -InstallDir '{app}'"""
+Name: "{autoprograms}\{#MyAppName}\فك تشفير نسخة احتياطية"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\installer\scripts\decrypt-backup.ps1' -InstallDir '{app}'"""
 
 [Run]
 ; Provisioning runs in a visible window (not silently) — if initdb or a
