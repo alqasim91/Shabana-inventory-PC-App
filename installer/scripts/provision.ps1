@@ -193,6 +193,42 @@ port = $pgPort
 
 # --- Start Postgres temporarily to run bootstrap + migrations ----------
 
+# Two different accounts touch this data directory, and that is what broke the
+# first real reinstall:
+#
+#   - initdb and this script run as the INSTALLING ADMINISTRATOR (Inno runs us
+#     elevated as that user), and initdb on Windows locks the data directory
+#     down to whoever created it.
+#   - ShabanaPostgres runs as LocalSystem, because that is what NSSM registers
+#     with no ObjectName. Every WAL segment the service creates after that is
+#     therefore owned by SYSTEM.
+#
+# Reinstall, and the temporary Postgres above starts as the admin, reaches a
+# WAL segment SYSTEM created, and dies with:
+#
+#     FATAL: could not open file "pg_wal/000000010000000000000002": Permission denied
+#
+# The message names a file, so it reads like corruption. It is an ACL.
+#
+# Granting SYSTEM and Administrators inheritable full control is what a normal
+# PostgreSQL-on-Windows install looks like anyway, and it lets both accounts
+# operate the same cluster. Done only when a data directory already exists -
+# a fresh initdb needs nothing.
+#
+# SIDs, not names: these machines are frequently Arabic-localised, where the
+# groups are "NT AUTHORITY\SYSTEM" and "Administrators" under different names.
+# S-1-5-18 = SYSTEM, S-1-5-32-544 = Administrators.
+if (Test-Path (Join-Path $dataDir 'PG_VERSION')) {
+    Write-Host 'Normalising data directory permissions...'
+    & icacls.exe $dataDir /grant "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /C /Q 2>&1 | Out-Null
+    # Best effort: a failure here is not fatal on its own, and the Postgres
+    # start below gives a far clearer error than icacls does.
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  (icacls returned $LASTEXITCODE - continuing; Postgres will report if it still cannot read its files.)"
+    }
+    $global:LASTEXITCODE = 0
+}
+
 Write-Host 'Starting Postgres (temporary, for provisioning)...'
 $pgCtl = Join-Path $pgBin 'pg_ctl.exe'
 & $pgCtl start -D $dataDir -l (Join-Path $logsDir 'pg-provision.log') -w
