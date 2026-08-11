@@ -4,6 +4,19 @@
 
 {
 	admin off
+
+	# Caddy never terminates TLS in this design. Locally it is plain HTTP on
+	# loopback/LAN; over the public link Tailscale Funnel terminates TLS with
+	# its own certificate and hands us plain HTTP.
+	#
+	# This line is load-bearing, not tidiness. Caddy 2.11 can issue
+	# certificates for IP addresses, so the moment a site block was added for
+	# `127.0.0.1:<port>` it started certificate management, blocked trying to
+	# reach an ACME CA on a machine with no public DNS, and never got as far as
+	# "serving initial configuration" - the service sat there and every request
+	# to /auth/v1/health went unanswered, which reads exactly like GoTrue being
+	# broken. Nothing here should ever ask for a certificate.
+	auto_https off
 }
 
 :{{HTTP_PORT}} {
@@ -89,14 +102,22 @@
 #
 # Bound to 127.0.0.1 explicitly, so only the Tailscale process on this machine
 # can connect. With no tunnel running, this port answers nobody.
-127.0.0.1:{{TUNNEL_PORT}} {
+http://127.0.0.1:{{TUNNEL_PORT}} {
 	root * {{INSTALL_DIR}}\www
 
 	# Claiming the install and the first-run screen are LOCAL-ONLY, forever.
 	# pc_first_run_bootstrap is one-shot server-side too; this is the second
 	# lock, not the only one.
-	@neverRemote path /setup /setup/* /rest/v1/rpc/pc_first_run_bootstrap
-	respond @neverRemote "Not available remotely" 403
+	#
+	# Inside a `handle`, NOT a bare `respond`. Caddy sorts directives by its own
+	# order, not by the order they are written, and `respond` sorts AFTER
+	# `handle` - so a bare respond here would lose to the SPA fallback below and
+	# quietly serve /setup to the internet. `handle` blocks are mutually
+	# exclusive and evaluated in source order, which is the only reason the
+	# equivalent guards on the main site work.
+	handle /setup /setup/* /rest/v1/rpc/pc_first_run_bootstrap {
+		respond "Not available remotely" 403
+	}
 
 	handle /rest/v1/* {
 		uri strip_prefix /rest/v1

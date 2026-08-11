@@ -393,6 +393,62 @@ jobs:
 
           Write-Host "SMOKE TEST PASSED - provisioned, claimed via the UI, logged in, read site '$($sites[0].name_ar)', file storage enforced."
 
+      # The public-link entrypoint, tested as the internet would reach it.
+      #
+      # Tailscale Funnel proxies to this loopback port, so anything answering
+      # here is answering the world. The first cut of this used a bare
+      # `respond` for the 403s, which Caddy sorts AFTER `handle` - the guards
+      # lost to the SPA fallback and /setup was served. Nothing about the
+      # config looked wrong; only asking the port could tell.
+      - name: Smoke test - public link entrypoint
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'C:\ProgramData\ShabanaSmoke'
+          $tunnelPortFile = Join-Path $root 'config\tunnel-port.txt'
+          if (-not (Test-Path $tunnelPortFile)) { throw 'tunnel-port.txt was not written by provisioning.' }
+          $tp = (Get-Content $tunnelPortFile -Raw).Trim()
+          $base = "http://127.0.0.1:$tp"
+
+          function Get-Status {
+            param([string]$Url, [string]$Method = 'GET')
+            try {
+              $r = Invoke-WebRequest -Uri $Url -Method $Method -UseBasicParsing -TimeoutSec 15
+              return [int]$r.StatusCode
+            } catch [System.Net.WebException] {
+              if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
+              throw
+            } catch {
+              if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
+              throw
+            }
+          }
+
+          # The app itself must be reachable, or the link is pointless.
+          $app = Get-Status "$base/"
+          if ($app -ne 200) { throw "Tunnel port did not serve the app (got $app)." }
+          Write-Host "  /                                        -> $app"
+
+          # Claiming the install must NOT be. These are the whole reason the
+          # tunnel gets its own site block instead of an IP check.
+          foreach ($p in @('/setup', '/setup/anything')) {
+            $s = Get-Status "$base$p"
+            if ($s -ne 403) { throw "$p was reachable over the tunnel (got $s, expected 403)." }
+            Write-Host "  $($p.PadRight(40)) -> $s"
+          }
+          $rpc = Get-Status "$base/rest/v1/rpc/pc_first_run_bootstrap" 'POST'
+          if ($rpc -ne 403) { throw "pc_first_run_bootstrap was reachable over the tunnel (got $rpc, expected 403)." }
+          Write-Host "  /rest/v1/rpc/pc_first_run_bootstrap      -> $rpc"
+
+          # Same paths on the LOCAL port must still work - the point is that
+          # they are local-only, not that they are gone.
+          $lp = (Get-Content (Join-Path $root 'config\http-port.txt') -Raw).Trim()
+          $localSetup = Get-Status "http://localhost:$lp/setup"
+          if ($localSetup -ne 200) { throw "/setup stopped working locally (got $localSetup)." }
+          Write-Host "  /setup on the local port                 -> $localSetup"
+
+          Write-Host 'PUBLIC LINK OK - app served, first-run claim refused remotely, still available locally.'
+
       - name: Smoke test logs
         if: failure()
         shell: pwsh
