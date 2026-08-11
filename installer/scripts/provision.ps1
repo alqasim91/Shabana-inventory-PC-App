@@ -421,6 +421,88 @@ Set-Content -Path (Join-Path $InstallDir 'Shabana.url') -Encoding ASCII -Value @
 URL=$appUrl
 "@
 
+# --- Make it open as an application, not a browser tab ---------------------
+# The .url above hands the app to the default browser, so the owner gets an
+# address bar, tabs and the browser's name in the taskbar. Chromium's --app=
+# mode opens the same page in a plain window with its own taskbar button - no
+# address bar, no tabs - which is what people mean when they say the thing
+# should feel like a program rather than a website.
+#
+# This is a WINDOW change, not an architecture one: the UI was always HTML, as
+# it would be inside Tauri or Electron too. What makes this a local
+# application is Postgres, PostgREST and GoTrue running as services on this
+# machine, which is unchanged.
+#
+# Edge ships with Windows 10 and 11, so this practically always resolves. If it
+# somehow does not, the Inno shortcuts keep pointing at Shabana.url and the app
+# still opens - in a normal browser window. Degraded, never broken.
+$browser = $null
+$candidates = @(
+    (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
+    (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe')
+)
+foreach ($c in $candidates) {
+    if ($c -and (Test-Path $c)) { $browser = $c; break }
+}
+if (-not $browser) {
+    # Registered location, for an install that is not in either Program Files.
+    foreach ($exe in @('msedge.exe', 'chrome.exe')) {
+        $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$exe"
+        if (Test-Path $key) {
+            $p = (Get-ItemProperty $key).'(default)'
+            if ($p -and (Test-Path $p)) { $browser = $p; break }
+        }
+    }
+}
+
+if ($browser) {
+    # Overwrite the .lnk files Inno already created, keeping their exact names
+    # and locations. Doing it this way means Inno still owns them for
+    # uninstall - creating our own alongside would leave orphans behind.
+    # Found by what they POINT AT, never by name. The app's name is Arabic and
+    # every .ps1 in this repo has to stay pure ASCII for PowerShell 5.1 (CI
+    # enforces it), so an Arabic path literal is not an option - and matching on
+    # the target is more honest anyway: it retargets exactly the shortcuts Inno
+    # aimed at this app, whatever it decided to call them.
+    $shell = New-Object -ComObject WScript.Shell
+    $searchRoots = @(
+        (Join-Path $env:PUBLIC 'Desktop'),
+        (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs')
+    )
+    $retargeted = 0
+    foreach ($root in $searchRoots) {
+        if (-not (Test-Path $root)) { continue }
+        Get-ChildItem -Path $root -Filter '*.lnk' -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                $lnk = $shell.CreateShortcut($_.FullName)
+                if ($lnk.TargetPath -like '*Shabana.url') {
+                    $lnk.TargetPath = $browser
+                    $lnk.Arguments = "--app=$appUrl"
+                    # The window title comes from the page's own <title>, which
+                    # is already the Arabic app name, so the taskbar reads
+                    # correctly without an icon asset - this build has none yet.
+                    $lnk.IconLocation = "$browser,0"
+                    $lnk.WorkingDirectory = Split-Path -Parent $browser
+                    $lnk.Save()
+                    $retargeted++
+                }
+            } catch {
+                # A shortcut we cannot read is not ours to worry about.
+            }
+        }
+    }
+    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null
+    if ($retargeted -gt 0) {
+        Write-Host "$retargeted shortcut(s) now open the app in its own window ($(Split-Path -Leaf $browser))."
+    } else {
+        Write-Host 'No app shortcuts found to retarget - the app still opens from Shabana.url.'
+    }
+} else {
+    Write-Host 'No Edge or Chrome found - shortcuts will open the default browser.'
+}
+
 # --- Health check ----------------------------------------------------------
 # NSSM reports a service as "started" as soon as the process launches, even
 # if that process exits immediately - so Start-Service succeeding proves
