@@ -87,7 +87,25 @@ foreach ($dir in @((Split-Path -Parent $dataDir), $configDir, $logsDir, (Join-Pa
 # files. Provisioning rewrites config\, regenerates www\ from www-src\, and may
 # move data\pg aside - all of which the running services hold open, and on
 # Windows an open handle makes a delete or rename fail outright.
-Stop-Service -Name 'ShabanaCaddy', 'ShabanaGoTrue', 'ShabanaPostgREST' -ErrorAction SilentlyContinue
+#
+# ShabanaPostgres is in this list, and leaving it out was a real bug: on a
+# reinstall over a SUCCESSFUL install the old service kept running, kept
+# holding data\pg, and the temporary `pg_ctl start` below then failed with
+# "could not start server" - because one was already running on that very
+# directory. It also occupied 5432, so the port probe moved to 5433 and every
+# generated config disagreed with postgresql.conf.
+#
+# It used to be stopped only on the "previous attempt never finished" path,
+# which is the one case where the database is disposable - i.e. everywhere
+# except where it mattered.
+Stop-Service -Name 'ShabanaCaddy', 'ShabanaGoTrue', 'ShabanaPostgREST', 'ShabanaPostgres' -ErrorAction SilentlyContinue
+
+# Stopping the service does not guarantee the postmaster is gone - NSSM returns
+# as soon as it has signalled it. Wait for the data directory's lock to clear,
+# or pg_ctl races it and fails intermittently, which is worse than failing
+# every time.
+$pgLock = Join-Path $InstallDir 'data\pg\postmaster.pid'
+for ($i = 0; $i -lt 30 -and (Test-Path $pgLock); $i++) { Start-Sleep -Milliseconds 500 }
 
 Write-Host 'Generating per-machine secrets and config...'
 & (Join-Path $PSScriptRoot 'generate-secrets.ps1') -InstallDir $InstallDir

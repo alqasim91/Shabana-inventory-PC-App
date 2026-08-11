@@ -183,7 +183,26 @@ if (Test-Path $httpPortFile) {
     $httpPort = Get-BindablePort -Preferred 8000 -Any
 }
 $pgPortFile = Join-Path $configDirEarly 'pg-port.txt'
-if (Test-Path $pgPortFile) {
+
+# An EXISTING data directory outranks both the cached choice and a fresh probe.
+# postgresql.conf is where the cluster's port actually lives; pg-port.txt is
+# only a note about what we picked once. When they disagree - which happens the
+# moment a reinstall probes a different port because the old service still held
+# the old one - everything downstream (postgrest.conf, gotrue.env, every psql
+# call in provisioning) is pointed somewhere the database is not.
+#
+# So: if there is a real cluster on disk, believe it.
+$existingConf = Join-Path $InstallDir 'data\pg\postgresql.conf'
+$confPort = $null
+if ((Test-Path (Join-Path $InstallDir 'data\pg\PG_VERSION')) -and (Test-Path $existingConf)) {
+    $m = Select-String -Path $existingConf -Pattern '^\s*port\s*=\s*(\d+)' | Select-Object -Last 1
+    if ($m) { $confPort = [int]$m.Matches[0].Groups[1].Value }
+}
+
+if ($confPort) {
+    $pgPort = $confPort
+    Write-Host "Using port $pgPort from the existing postgresql.conf."
+} elseif (Test-Path $pgPortFile) {
     # Reuse the port a previous provision already baked into postgresql.conf,
     # so a reinstall/re-provision stays consistent with the existing data dir
     # instead of picking a new port the running Postgres isn't listening on.
