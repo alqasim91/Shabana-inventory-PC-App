@@ -115,7 +115,10 @@ http://127.0.0.1:{{TUNNEL_PORT}} {
 	# quietly serve /setup to the internet. `handle` blocks are mutually
 	# exclusive and evaluated in source order, which is the only reason the
 	# equivalent guards on the main site work.
-	handle /setup /setup/* /rest/v1/rpc/pc_first_run_bootstrap {
+	# A NAMED MATCHER, because `handle` takes exactly one path argument -
+	# `handle /a /b /c { }` is a parse error, not a three-path match.
+	@neverRemote path /setup /setup/* /rest/v1/rpc/pc_first_run_bootstrap
+	handle @neverRemote {
 		respond "Not available remotely" 403
 	}
 

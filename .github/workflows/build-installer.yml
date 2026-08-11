@@ -94,6 +94,41 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile caddy.zip
           Expand-Archive -Path caddy.zip -DestinationPath pc-app/installer/payload/bin/caddy -Force
 
+      # Lint the Caddyfile TEMPLATE here, seconds after Caddy is available,
+      # instead of finding out ~14 minutes later when provisioning refuses to
+      # start it. provision.ps1 still validates the rendered file on the
+      # customer's machine - this is the fast copy of that same check, so a
+      # typo costs one minute of CI rather than a whole run.
+      - name: Validate Caddyfile template
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tpl = Get-Content pc-app/installer/config/Caddyfile.template -Raw
+          # Stand-in values of the right SHAPE - ports numeric, a Windows path
+          # with no spaces - so the parse sees what provisioning will produce.
+          $rendered = $tpl `
+            -replace '\{\{HTTP_PORT\}\}', '8000' `
+            -replace '\{\{TUNNEL_PORT\}\}', '8443' `
+            -replace '\{\{POSTGREST_PORT\}\}', '3001' `
+            -replace '\{\{GOTRUE_PORT\}\}', '9999' `
+            -replace '\{\{INSTALL_DIR\}\}', 'C:\ProgramData\Shabana'
+
+          # Any {{TOKEN}} left over means the template grew a placeholder that
+          # generate-secrets.ps1 does not fill - which ships a literal
+          # "{{FOO}}" into a live config.
+          $leftover = [regex]::Matches($rendered, '\{\{[A-Z_]+\}\}') | ForEach-Object { $_.Value } | Sort-Object -Unique
+          if ($leftover) { throw "Unreplaced token(s) in Caddyfile.template: $($leftover -join ', ')" }
+
+          $tmp = "$env:TEMP\Caddyfile.lint"
+          Set-Content -Path $tmp -Value $rendered -Encoding ASCII
+          $caddy = 'pc-app/installer/payload/bin/caddy/caddy.exe'
+          $out = & $caddy validate --config $tmp --adapter caddyfile 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            $out | ForEach-Object { Write-Host $_ }
+            throw 'Caddyfile.template does not parse.'
+          }
+          Write-Host 'Caddyfile template is valid.'
+
       # --- NSSM (service wrapper for PostgREST/GoTrue/Caddy) ---
       - name: Download NSSM
         shell: pwsh
