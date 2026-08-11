@@ -193,13 +193,26 @@ if (Test-Path $pgPortFile) {
 }
 $pgrPort  = Get-BindablePort -Preferred 3001 -Exclude @($httpPort, $pgPort)
 $gotPort  = Get-BindablePort -Preferred 9999 -Exclude @($httpPort, $pgPort, $pgrPort)
+
+# The public-link entrypoint (see setup-tunnel.ps1). A SEPARATE port from
+# HTTP_PORT, bound to loopback - and it is not plumbing, it is the security
+# boundary.
+#
+# Tailscale Funnel proxies inbound traffic to a LOCAL port, so by the time a
+# request reaches Caddy its remote_ip is 127.0.0.1. Every "loopback only" rule
+# guarding /setup and pc_first_run_bootstrap on HTTP_PORT would therefore say
+# yes to a stranger on the internet. Giving the tunnel its own site block,
+# where those paths are refused unconditionally, makes the distinction
+# structural rather than a test on an address the tunnel already rewrote.
+$tunPort  = Get-BindablePort -Preferred 8443 -Exclude @($httpPort, $pgPort, $pgrPort, $gotPort)
 $ports = @{
     HTTP_PORT      = $httpPort
     PG_PORT        = $pgPort
     POSTGREST_PORT = $pgrPort
     GOTRUE_PORT    = $gotPort
+    TUNNEL_PORT    = $tunPort
 }
-Write-Host "Ports: HTTP=$httpPort  Postgres=$pgPort  PostgREST=$pgrPort  GoTrue=$gotPort"
+Write-Host "Ports: HTTP=$httpPort  Postgres=$pgPort  PostgREST=$pgrPort  GoTrue=$gotPort  Tunnel=$tunPort"
 
 $replacements = @{
     JWT_SECRET  = $jwtSecret
@@ -263,6 +276,12 @@ Set-Content -Path (Join-Path $configDir 'anon.key') -Value $anonKey -NoNewline -
 # The chosen HTTP port, so provision.ps1 can write the desktop shortcut to the
 # right URL and the health check knows what to probe. ASCII, no BOM.
 Set-Content -Path (Join-Path $configDir 'http-port.txt') -Value ([string]$httpPort) -NoNewline -Encoding ASCII
+
+# The loopback port Caddy exposes for the public link, so setup-tunnel.ps1
+# knows what to point Tailscale Funnel at. Written even when no tunnel is
+# configured - the site block always listens, it is simply unreachable from
+# anywhere but this machine until someone runs setup-tunnel.ps1.
+Set-Content -Path (Join-Path $configDir 'tunnel-port.txt') -Value ([string]$tunPort) -NoNewline -Encoding ASCII
 
 Write-Host "Secrets generated and config files written to $configDir"
 Write-Host "JWT secret and DB password are unique to this machine - do not copy config\ between installs."

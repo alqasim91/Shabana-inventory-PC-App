@@ -71,6 +71,11 @@ Name: "{autoprograms}\{#MyAppName}\{#MyAppName}"; Filename: "{app}\Shabana.url"
 Name: "{autoprograms}\{#MyAppName}\استعادة نسخة احتياطية"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\restore.ps1"" -InstallDir ""{app}"""
 Name: "{autoprograms}\{#MyAppName}\إعادة تعيين كلمة مرور المدير"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\reset-admin.ps1"" -InstallDir ""{app}"""
 Name: "{autoprograms}\{#MyAppName}\تصدير تقرير المشكلة"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\export-report.ps1"" -InstallDir ""{app}"""
+; The public link is OPT-IN and never enabled by the installer. Exposing a
+; shop's books to the internet is the owner's decision to make deliberately,
+; not a default they discover later.
+Name: "{autoprograms}\{#MyAppName}\تفعيل الرابط العام"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\setup-tunnel.ps1"" -InstallDir ""{app}"""
+Name: "{autoprograms}\{#MyAppName}\إيقاف الرابط العام"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\setup-tunnel.ps1"" -InstallDir ""{app}"" -Disable"
 
 [Run]
 ; Provisioning runs in a visible window (not silently) — if initdb or a

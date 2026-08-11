@@ -71,3 +71,51 @@
 		file_server
 	}
 }
+
+# ===========================================================================
+# The public link (Tailscale Funnel) - see installer/scripts/setup-tunnel.ps1
+# ===========================================================================
+# A SECOND entrypoint, deliberately not the one above.
+#
+# Funnel terminates TLS on THIS machine (Tailscale's relays forward the stream
+# by SNI without decrypting it) and then proxies plain HTTP to a local port.
+# Which means every request arriving here has remote_ip 127.0.0.1 - the tunnel
+# rewrote it. The `not remote_ip 127.0.0.1` guards on the port above would look
+# at a visitor in another country and see localhost.
+#
+# So the tunnel gets its own site, with those routes refused OUTRIGHT. No IP
+# test, nothing to spoof with an X-Forwarded-For header, and no way for a later
+# edit to the main block to quietly widen what the internet can reach.
+#
+# Bound to 127.0.0.1 explicitly, so only the Tailscale process on this machine
+# can connect. With no tunnel running, this port answers nobody.
+127.0.0.1:{{TUNNEL_PORT}} {
+	root * {{INSTALL_DIR}}\www
+
+	# Claiming the install and the first-run screen are LOCAL-ONLY, forever.
+	# pc_first_run_bootstrap is one-shot server-side too; this is the second
+	# lock, not the only one.
+	@neverRemote path /setup /setup/* /rest/v1/rpc/pc_first_run_bootstrap
+	respond @neverRemote "Not available remotely" 403
+
+	handle /rest/v1/* {
+		uri strip_prefix /rest/v1
+		reverse_proxy 127.0.0.1:{{POSTGREST_PORT}}
+	}
+
+	handle /auth/v1/* {
+		uri strip_prefix /auth/v1
+		reverse_proxy 127.0.0.1:{{GOTRUE_PORT}}
+	}
+
+	handle /pc/* {
+		uri strip_prefix /pc
+		root * {{INSTALL_DIR}}\public
+		file_server
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

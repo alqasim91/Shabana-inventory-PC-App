@@ -58,6 +58,29 @@ tenant provisioned from empty. Worth fixing there too — not done from this rep
 
 ---
 
+## Frontend divergence worth knowing about
+
+### `frontend/src/lib/supabase.ts` — same-origin API base
+The cloud build bakes a fixed Supabase URL. This edition derives it from
+`window.location.origin` instead, because the same Caddy that served the page
+also proxies `/rest/v1` and `/auth/v1`.
+
+It has to. A baked `http://localhost:8000` sends the **visitor's** browser to
+the **visitor's** own localhost — so the app would load over the public link and
+then fail every request, and the same on any phone or second PC on the shop
+wifi. The HTTP port is also chosen per machine, so even locally a literal port
+can be stale after a reinstall.
+
+`VITE_SUPABASE_URL` is still read as a non-browser fallback, which keeps the
+install-time token in the bundle and the CI guard meaningful.
+
+> Re-vendoring rule: this file used to be byte-identical to the cloud copy, so a
+> naive `cp` would silently undo it. The sync procedure — never overwrite a file
+> this repo has committed changes to since the last vendor — covers it, provided
+> that check is actually run. Do not skip it.
+
+---
+
 ## PC-only migrations
 
 > **Numbering rule: PC-only migrations live at `0100+`, never in the cloud's range.**
