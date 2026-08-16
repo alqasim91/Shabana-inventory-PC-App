@@ -45,6 +45,30 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# --- Elevate ---------------------------------------------------------------
+# The Tailscale CLI on Windows refuses to change Funnel settings from a
+# non-elevated prompt unless the caller has been made a Tailscale "operator",
+# which nobody has done on a fresh machine. Inno's [Icons] section cannot mark
+# a shortcut "run as administrator", so rather than depend on the owner
+# remembering to right-click, the script asks for elevation itself.
+#
+# -NoExit is passed to the elevated copy deliberately: it is a NEW console
+# window, and without it the link (or the error) would flash past unread.
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$isAdmin = (New-Object Security.Principal.WindowsPrincipal $identity).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host 'Administrator rights are required - approve the prompt.'
+    $relaunch = @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit',
+        '-File', ('"{0}"' -f $PSCommandPath),
+        '-InstallDir', ('"{0}"' -f $InstallDir)
+    )
+    if ($Disable) { $relaunch += '-Disable' }
+    Start-Process -FilePath 'powershell.exe' -ArgumentList $relaunch -Verb RunAs
+    return
+}
+
 $configDir  = Join-Path $InstallDir 'config'
 $publicDir  = Join-Path $InstallDir 'public'
 $urlFile    = Join-Path $configDir 'public-url.txt'

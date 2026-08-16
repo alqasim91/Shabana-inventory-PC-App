@@ -68,14 +68,25 @@ Source: "payload\Shabana.url"; DestDir: "{app}"; Flags: ignoreversion
 ; that one file moves every shortcut at once.
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\Shabana.url"
 Name: "{autoprograms}\{#MyAppName}\{#MyAppName}"; Filename: "{app}\Shabana.url"
-Name: "{autoprograms}\{#MyAppName}\استعادة نسخة احتياطية"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\restore.ps1"" -InstallDir ""{app}"""
-Name: "{autoprograms}\{#MyAppName}\إعادة تعيين كلمة مرور المدير"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\reset-admin.ps1"" -InstallDir ""{app}"""
-Name: "{autoprograms}\{#MyAppName}\تصدير تقرير المشكلة"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\export-report.ps1"" -InstallDir ""{app}"""
+; EVERY script shortcut below passes -NoExit. Without it the console window
+; closes the instant the script returns - which means both the result and the
+; error message are gone before anyone can read them. The public-link shortcut
+; shipped without it and simply "opened a window for a moment and vanished",
+; whether it had succeeded or failed. A maintenance tool the owner runs by hand
+; must leave its output on screen.
+Name: "{autoprograms}\{#MyAppName}\استعادة نسخة احتياطية"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -NoExit -File ""{app}\installer\scripts\restore.ps1"" -InstallDir ""{app}"""
+Name: "{autoprograms}\{#MyAppName}\إعادة تعيين كلمة مرور المدير"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -NoExit -File ""{app}\installer\scripts\reset-admin.ps1"" -InstallDir ""{app}"""
+Name: "{autoprograms}\{#MyAppName}\تصدير تقرير المشكلة"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -NoExit -File ""{app}\installer\scripts\export-report.ps1"" -InstallDir ""{app}"""
 ; The public link is OPT-IN and never enabled by the installer. Exposing a
 ; shop's books to the internet is the owner's decision to make deliberately,
 ; not a default they discover later.
-Name: "{autoprograms}\{#MyAppName}\تفعيل الرابط العام"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\setup-tunnel.ps1"" -InstallDir ""{app}"""
-Name: "{autoprograms}\{#MyAppName}\إيقاف الرابط العام"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\scripts\setup-tunnel.ps1"" -InstallDir ""{app}"" -Disable"
+;
+; No "run as administrator" flag here: Inno's [Icons] cannot set one, and the
+; Tailscale CLI refuses to change Funnel settings unelevated. setup-tunnel.ps1
+; therefore re-launches itself through UAC on its own - see the elevation block
+; at the top of that script.
+Name: "{autoprograms}\{#MyAppName}\تفعيل الرابط العام"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -NoExit -File ""{app}\installer\scripts\setup-tunnel.ps1"" -InstallDir ""{app}"""
+Name: "{autoprograms}\{#MyAppName}\إيقاف الرابط العام"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -NoExit -File ""{app}\installer\scripts\setup-tunnel.ps1"" -InstallDir ""{app}"" -Disable"
 ; Off-site backup needs a destination from the owner (a drive letter, a share,
 ; or an rclone remote), so it opens a prompt rather than running headless.
 Name: "{autoprograms}\{#MyAppName}\إعداد النسخ الاحتياطي الخارجي"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\installer\scripts\setup-offsite.ps1' -InstallDir '{app}'"""
