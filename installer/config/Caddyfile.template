@@ -100,9 +100,23 @@
 # test, nothing to spoof with an X-Forwarded-For header, and no way for a later
 # edit to the main block to quietly widen what the internet can reach.
 #
-# Bound to 127.0.0.1 explicitly, so only the Tailscale process on this machine
-# can connect. With no tunnel running, this port answers nobody.
-http://127.0.0.1:{{TUNNEL_PORT}} {
+# ADDRESSED BY PORT, RESTRICTED BY `bind`. These are two different things and
+# conflating them broke the public link completely.
+#
+# A site address of `http://127.0.0.1:{{TUNNEL_PORT}}` tells Caddy to match
+# requests whose HOST IS 127.0.0.1. But Funnel forwards the visitor's original
+# Host header - `something.ts.net` - so the request arrived on this port and
+# matched no site block at all. Caddy answers an unmatched request with a bare
+# `200 OK` and an empty body, so the link looked alive and served a blank page,
+# and every guard below silently never ran (/setup answered 200-empty from the
+# no-route path, not 403 from the handler).
+#
+# `:{{TUNNEL_PORT}}` matches ANY Host on this port, and `bind 127.0.0.1` keeps
+# the listening socket on loopback so only the Tailscale process on this machine
+# can reach it. Host-independent matching, unchanged exposure.
+:{{TUNNEL_PORT}} {
+	bind 127.0.0.1
+
 	root * {{INSTALL_DIR}}\www
 
 	# Claiming the install and the first-run screen are LOCAL-ONLY, forever.
