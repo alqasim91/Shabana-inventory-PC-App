@@ -62,6 +62,21 @@ INSERT INTO smoke VALUES ('v_contact_balance = -1000.00 (we owe vendor)',
 INSERT INTO smoke VALUES ('audit_log captured the payments',
   (SELECT COUNT(*) FROM audit_log WHERE entity = 'payments' AND action = 'insert') = 2);
 
+-- 4) AMENDMENT S-1: bcrypt hash accepted (verify-only import), garbage rejected.
+INSERT INTO users (id, username, full_name, role, password_hash, must_change_password)
+VALUES ('u-bc', 'bcrypt.user', 'bcrypt', 'staff', '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012', 0);
+.print >>> expecting 1 error: CHECK constraint (garbage password_hash)
+INSERT INTO users (id, username, full_name, role, password_hash, must_change_password)
+VALUES ('u-bad', 'bad.user', 'bad', 'staff', 'plaintext-garbage', 0);
+INSERT INTO smoke VALUES ('S-1: bcrypt hash accepted, garbage hash rejected',
+  (SELECT COUNT(*) FROM users WHERE id = 'u-bc') = 1 AND (SELECT COUNT(*) FROM users WHERE id = 'u-bad') = 0);
+
+-- 5) AMENDMENT S-2: a back-dated cash payment's drawer row is dated by paid_at.
+INSERT INTO payments (id, parent_type, parent_id, amount_piasters, method, site_id, paid_at)
+VALUES ('pay-back', 'po', 'po-1', 500, 'cash', 'site-1', '2026-01-05T00:00:00.000Z');
+INSERT INTO smoke VALUES ('S-2: back-dated payment cash row created_at = paid_at',
+  (SELECT created_at FROM cash_movements WHERE source_type = 'payment' AND source_id = 'pay-back') = '2026-01-05T00:00:00.000Z');
+
 .print
 .print ===== SMOKE RESULT =====
 SELECT name, CASE ok WHEN 1 THEN 'PASS' ELSE 'FAIL' END AS result FROM smoke;

@@ -149,10 +149,13 @@ CREATE TABLE users (
   -- Encoded password hash, self-describing, e.g.
   --   $argon2id$v=19$m=65536,t=3,p=1$<salt_b64>$<hash_b64>      (preferred)
   --   $pbkdf2-sha256$i=600000$<salt_b64>$<hash_b64>             (fallback)
+  --   $2a$ / $2b$ / $2y$ ...                                    (bcrypt: VERIFY-ONLY, imported
+  --                                       users; the app never creates one — amendment S-1)
   -- NULL only for the first-run placeholder admin (must_change_password = 1).
   password_hash        TEXT    CHECK (password_hash IS NULL
                                       OR password_hash GLOB '$argon2id$*'
-                                      OR password_hash GLOB '$pbkdf2-sha256$*'),
+                                      OR password_hash GLOB '$pbkdf2-sha256$*'
+                                      OR password_hash GLOB '$2[aby]$*'),
   password_changed_at  TEXT    CHECK (strftime('%Y-%m-%dT%H:%M:%fZ', password_changed_at) IS password_changed_at),
   must_change_password INTEGER NOT NULL DEFAULT 1 CHECK (must_change_password IN (0, 1)),
   failed_attempts      INTEGER NOT NULL DEFAULT 0 CHECK (failed_attempts >= 0),
@@ -1235,12 +1238,13 @@ BEGIN
      SET site_id = (SELECT site_id FROM sales_orders WHERE id = new.parent_id)
    WHERE id = new.id AND site_id IS NULL AND parent_type = 'so';
 
-  INSERT INTO cash_movements (site_id, amount_delta_piasters, source_type, source_id, reason, created_by)
+  -- S-2: the drawer row is dated by the payment's paid_at (single date basis, DIV-27).
+  INSERT INTO cash_movements (site_id, amount_delta_piasters, source_type, source_id, reason, created_by, created_at)
   SELECT coalesce(new.site_id, (SELECT site_id FROM sales_orders WHERE id = new.parent_id)),
          CASE new.parent_type WHEN 'so' THEN new.amount_piasters ELSE -new.amount_piasters END,
          'payment', new.id,
          CASE new.parent_type WHEN 'so' THEN 'تحصيل نقدي من بيع' ELSE 'سداد نقدي لأمر شراء' END,
-         new.created_by
+         new.created_by, new.paid_at
    WHERE new.method = 'cash';
 
   UPDATE sales_orders SET status = 'closed'
