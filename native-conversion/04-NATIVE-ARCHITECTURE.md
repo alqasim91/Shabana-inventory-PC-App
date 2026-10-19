@@ -6,14 +6,14 @@ Status: design document for the build agents. **No code is written here.** Read 
 file is the bug. If they disagree about a **web defect**, this file (section 13) wins, because it records the decision to fix it.
 
 Product rule that overrides everything: **the end user never runs a command, edits a file, starts a service, opens a port or touches
-the database.** Every operational need (setup, backup, restore, upgrade, repair, password recovery, import, problem report) is a button
+the database.** Every operational need (setup, backup, restore, upgrade, repair, password recovery, problem report) is a button
 in the app or a step in the installer. Section 16 lists the audit of this rule.
 
 ---
 
 ## 1. Decisions summary
 
-"Owner" = already decided by the owner. "Proposed" = this document's decision; reasoned below; the owner may veto (see `00-README.md` open questions).
+"Owner" = already decided by the owner. "Proposed" = this document's decision; reasoned below; the owner may veto (all owner questions are now resolved: see `00-README.md` decisions L-xx).
 
 | # | Topic | Decision | Status |
 |---|---|---|---|
@@ -21,24 +21,23 @@ in the app or a step in the installer. Section 16 lists the audit of this rule.
 | D2 | Target framework | **`net10.0-windows` (.NET 10 LTS, supported to Nov 2028).** Decided 2026-10-18: .NET 8 LTS leaves support on 10 Nov 2026, so v1.0 must not ship on it. One property in `Directory.Build.props`; package pins in section 2 follow the 10.x line | Decided |
 | D3 | Database | SQLite for everything incl. users/auth, one file, WAL | Owner |
 | D4 | Access layer | Dapper over Microsoft.Data.Sqlite (no EF Core) | Proposed |
-| D5 | Password hashing | Argon2id (Konscious) as written in `schema.sql`; PBKDF2-SHA256 fallback (built in); **bcrypt verify-only** (BCrypt.Net-Next) for imported GoTrue hashes, rehash on first login | Proposed |
+| D5 | Password hashing | Argon2id (Konscious) as written in `schema.sql`; PBKDF2-SHA256 fallback (built in). No bcrypt anywhere: there is no import (L-24) | Proposed |
 | D6 | Printing | Code-built `FixedDocument` pages (A4, RTL) shown in a viewer and printed through WPF; PDF export = pages rasterised at 200 dpi into an in-house minimal PDF writer. No third-party PDF library | Proposed |
 | D7 | Charts | No chart library in v1 (the spec has only horizontal bar lists and progress bars) | Proposed |
-| D8 | Data location | `C:\ProgramData\ShabanaInventory\` (per machine, ACL `Users:Modify`), not `%LocalAppData%`, and not the old `C:\ProgramData\Shabana\` | Proposed |
-| D9 | Installer | Keep Inno Setup 6 (not MSIX); self-contained `win-x64` publish; per-machine; Authenticode signing step | Proposed |
-| D10 | Single machine | One PC, one process, one DB file. LAN / multi-PC access is **out of v1** (section 5.6 says how it would be added) | Proposed (flagged) |
-| D11 | Auth recovery | Recovery key printed at setup + a UAC-gated, logged, owner-switchable "Windows administrator" reset. No master password, no vendor backdoor | Proposed (flagged) |
+| D8 | Data location | `C:\ProgramData\ShabanaInventory\` (per machine, ACL `Users:Modify`), not `%LocalAppData%`, and not the old `C:\ProgramData\Shabana\`; backups default to `C:\ProgramData\ShabanaInventory\Backups` (changeable in settings) | Proposed |
+| D9 | Installer | Keep Inno Setup 6 (not MSIX); self-contained `win-x64` publish; per-machine; Authenticode signing step that is optional and skipped when no certificate secret exists (the owner buys and holds the certificate, L-13) | Decided |
+| D10 | Single machine | **One PC only**, one process, one DB file. LAN / multi-PC access and the public tunnel link are **dropped** (owner-confirmed, L-14) | Owner |
+| D11 | Auth recovery | Recovery key printed at setup + a UAC-gated, logged "Windows administrator" reset, **enabled** (owner-confirmed, L-18; the owner can still switch it off). No master password, no vendor backdoor | Owner |
 | D12 | Money / qty | `Money` = `long` piasters, `Qty` = `long` milli, `Int128` intermediates, never `double`/`decimal` in the domain | Per 03 §2 |
 | D13 | Tenancy | Single business; no `org_id`, no `/platform` | Per 03 §1 |
 | D14 | Time | UTC instants + business-zone calendar days, computed with NodaTime tzdb (not Windows tz) | Proposed |
-| D15 | Hard deletes | None for financial documents (orders, ledgers); payments deletable only with compensation, as in the web UI | Proposed |
+| D15 | Hard deletes | None for orders, contacts, items, users, sites (reversal only, owner-accepted, L-21); payments deletable only with compensation, as in the web UI | Owner |
 
 ---
 
 ## 2. Platform, packages, pins
 
-**Runtime/OS.** Windows 10 version 1809 (build 17763) or later, and Windows 11; x64 only. .NET 10 does not run on Windows 7 / 8 / 8.1;
-if any shop PC is that old the plan changes (open question Q3). The app is **self-contained** (the .NET runtime is shipped inside the install), so the
+**Runtime/OS.** 64-bit Windows 10 version 1809 (build 17763) or later, and Windows 11; **x64 only** (owner-confirmed, L-29). No x86 or ARM64 build is produced. .NET 10 does not run on Windows 7 / 8 / 8.1. The app is **self-contained** (the .NET runtime is shipped inside the install), so the
 end user installs nothing else. Publish flags: `-r win-x64 --self-contained true -p:PublishReadyToRun=true -p:PublishTrimmed=false`
 (WPF does not support trimming). Not single-file (WPF native libraries; start-up cost of self-extraction). Expected install size 150–200 MB unpacked,
 roughly 60–70 MB as an installer.
@@ -53,12 +52,10 @@ Packages that track the runtime (Microsoft.Data.Sqlite, Microsoft.Extensions.*, 
 | Microsoft.Data.Sqlite | Data | 10.0.x | Official ADO.NET provider; bundles `SQLitePCLRaw.bundle_e_sqlite3`. App must assert `sqlite_version() >= 3.38` at start (schema uses STRICT, generated columns, RETURNING; developed on 3.45.1) |
 | Dapper | Core/Data | 2.1.35 | Thin mapper; see D4 |
 | CommunityToolkit.Mvvm | App | 8.4.0 | Source-generated `[ObservableProperty]` / `[RelayCommand]`, messenger |
-| Microsoft.Extensions.Hosting | App | 10.0.x | Generic Host: DI, logging, `BackgroundService` for the scheduler |
+| Microsoft.Extensions.Hosting | App | 10.0.x | Generic Host: DI, logging, `BackgroundService` for the idle monitor and due-expense refresh |
 | Serilog.Extensions.Hosting, Serilog.Sinks.File | App | latest stable (confirm day 1) / 5.0.0 | Rolling log files in `logs\`, 14 days |
 | Konscious.Security.Cryptography.Argon2 | Data | 1.3.1 | Pure-managed Argon2id (D5) |
-| BCrypt.Net-Next | LegacyImport/Data | 4.0.3 | **Verify only** `$2a$/$2b$/$2y$` GoTrue hashes |
 | NodaTime | Core | 3.2.x | Embedded tzdb: correct Cairo DST rules regardless of Windows updates (Egypt changed DST rules twice in ten years) |
-| Npgsql | LegacyImport only | 10.0.x | Read the old PostgreSQL 18 install (05) |
 | xunit, xunit.runner.visualstudio, Microsoft.NET.Test.Sdk, Shouldly, coverlet.collector | Tests | 2.9.x / 2.8.x / 17.11.x / 4.2.x / 6.0.x | Shouldly, not FluentAssertions (v8+ is commercial) |
 | FlaUI.UIA3 | Tests.UI | 4.0.0 | Windows UI Automation smoke tests in CI |
 | Inno Setup | installer | 6.x (record the exact version in the workflow `env`) | D9 |
@@ -71,7 +68,7 @@ every Windows build (no ICU dependency); **do not rely on culture for digits** �
 
 ## 3. Solution layout
 
-The whole tree below lives in the **`native/`** folder at the root of this repository (`Shabana-inventory-PC-App`, decision L-29); paths are relative to `native/`. The old edition stays on a `legacy/pc-edition` branch for hot-fixes. CI workflows live in the repo's `.github/workflows/` with `working-directory: native`.
+The whole tree below lives in the **`native/`** folder at the root of this repository (`Shabana-inventory-PC-App`, decision L-28); paths are relative to `native/`. The old edition stays on a `legacy/pc-edition` branch for hot-fixes. CI workflows live in the repo's `.github/workflows/` with `working-directory: native`.
 
 ```
 Shabana.sln
@@ -93,10 +90,9 @@ src/
   Shabana.Data/               net10.0
     Sqlite/                   ConnectionFactory (pragmas), SqliteDb : IDb, UnitOfWork (BEGIN IMMEDIATE + app_context)
     Migrations/Scripts/       0001_baseline.sql (= sqlite/schema.sql, both phases), 0002_*.sql ... EmbeddedResource
-    Migrations/               MigrationRunner, BalanceFingerprint, BaselineSplitter (Phase 1 / Phase 2 for the importer)
-    Security/                 PasswordHasher (Argon2id / PBKDF2 / bcrypt-verify), RecoveryKey, SessionTokens
-    Maintenance/              BackupService, RestoreService, IntegrityService, ExportService, Scheduler policy, Diagnostics
-  Shabana.LegacyImport/       net10.0 (the only project that references Npgsql) — 05-DATA-MIGRATION.md
+    Migrations/               MigrationRunner, BalanceFingerprint, BaselineSplitter (Phase 1 / Phase 2 split, used by salvage and repair)
+    Security/                 PasswordHasher (Argon2id / PBKDF2), RecoveryKey, SessionTokens
+    Maintenance/              BackupService, RestoreService, IntegrityService, ExportService, StartupBackupPolicy, Diagnostics
   Shabana.App/                net10.0-windows, WPF, OutputType WinExe
     App.xaml(.cs)  Startup/   single-instance, host builder, startup gate (section 4.3)
     Shell/                    MainWindow, Sidebar, Header (site switcher, bell, search, user menu), LockOverlay
@@ -112,12 +108,12 @@ installer/
   Shabana.iss  lang/Arabic.isl  assets/      Inno Setup (section 11)
 tools/
   LabelsGen/                  generates Labels.g.cs from labels.ar.json (+ native file) at build
-  fixtures/                   legacy-postgres fixture dumps/exports for import tests
+  fixtures/                   N-1 database fixtures for migration tests
 .github/workflows/            build-native.yml (section 11.6)
 ```
 
-Dependency rule (enforced by an architecture test): `Core` references nothing of ours; `Data` → `Core`; `LegacyImport` → `Core`, `Data`;
-`App` → `Core`, `Data`, `LegacyImport`; `Tests*` → everything. `Core` may reference `System.Data.Common` and Dapper but never
+Dependency rule (enforced by an architecture test): `Core` references nothing of ours; `Data` → `Core`;
+`App` → `Core`, `Data`; `Tests*` → everything. `Core` may reference `System.Data.Common` and Dapper but never
 `Microsoft.Data.Sqlite`. Views never call `Data` types: view-models depend on `I*Service` interfaces only (CLAUDE.md "no inline queries in components").
 
 **Why service implementations sit in `Core`, not `Data`.** The recipes (03 §9) are business logic whose steps are SQL statements in one transaction; splitting
@@ -144,7 +140,7 @@ each into repository interface + implementation doubles the code and hides the t
 ### 4.2 Dependency injection
 
 Microsoft.Extensions.DependencyInjection through the Generic Host. Lifetimes: `Singleton` — `IDb`, `IClock`, `IBusinessCalendar`, `ISessionContext` (current user), `INavigationService`,
-`IDialogService`, all `I*Service` (stateless; the current user comes from `ISessionContext`), `BackupScheduler` (hosted service); `Transient` — view-models. Services are wrapped by a
+`IDialogService`, all `I*Service` (stateless; the current user comes from `ISessionContext`), `StartupBackupPolicy` (daily-at-start decision, no timer); `Transient` — view-models. Services are wrapped by a
 `DispatchProxy` that enforces the `[Guard]` attribute of each interface method (section 6.6). `IClock` is injectable so tests control "now" and the business day.
 
 ### 4.3 Start-up sequence (deterministic; every failure path is a screen, never a stack trace)
@@ -152,11 +148,12 @@ Microsoft.Extensions.DependencyInjection through the Generic Host. Lifetimes: `S
 1. **Single instance** (section 5.5). Second launch focuses the first and exits.
 2. Resolve data dir (section 5.1; `--data-dir` / `SHABANA_DATA_DIR` override for tests only). Create sub-folders if missing. Set up logging.
 3. Global handlers: `DispatcherUnhandledException`, `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException` → Arabic error dialog with **«تصدير تقرير المشكلة»** (section 9.7); never shows exception text to staff.
-4. **Recovery journals:** if `import\swap.json` or `restore\swap.json` exists, finish or roll back the interrupted file swap deterministically (05 §10.4, section 9.2) before opening the DB.
+4. **Recovery journals:** if `restore\swap.json` exists, finish or roll back the interrupted file swap deterministically (section 9.2) before opening the DB.
 5. **Open DB** (create if absent): apply pragmas (5.2); assert SQLite version; run `MigrationRunner` (section 8). Outcomes: *created* → first-run; *upgraded* (a "database was updated" toast with the pre-migration backup name); *up to date*; *newer than the app* → blocking screen "هذه البيانات أنشئت بإصدار أحدث من البرنامج"; *failed* → rolled back automatically, app shows the cause and the safe-copy location, offers "تصدير تقرير المشكلة".
 6. `PRAGMA quick_check` (always; skipped above 1 GB, then weekly). Failure → **Recovery screen** (section 9.5), not the login.
+6b. **Daily backup:** if first run is complete and no successful `auto` backup exists for today's business date, take it now (section 9.2), before any login, so it precedes the user's work.
 7. If `app_meta.first_run_completed = 0` → **First-run wizard** (section 9.1). Otherwise → **Login** (section 6).
-8. After login: start background jobs (backup scheduler, idle monitor, due-expense refresh), show the dashboard/landing page.
+8. After login: start background jobs (idle monitor, due-expense refresh), show the dashboard/landing page.
 
 ### 4.4 UI shell
 
@@ -185,8 +182,8 @@ IBM Plex Sans Arabic (SIL OFL — redistribution and embedding allowed; ship `Re
 ### 4.7 Labels
 
 `resources/labels.ar.json` (62 KB, all groups of `labels.ts`) is the single source; `tools/LabelsGen` turns it at build time into `Labels.g.cs`: nested static classes with `const string`, and the 16 `_templates` as methods
-(`Labels.Table.ShowingCount(int shown, int total)`) implemented with the Arabic formatter. **Native-only labels** (login lockout, recovery, wizard, backup, restore, integrity, import, lock screen, change password, update messages, error codes of 03 §9)
-go in `labels.native.ar.json` with the same generator; groups to add: `LOCK`, `PWD`, `RECOVERY`, `WIZARD`, `BACKUP`, `RESTORE`, `INTEGRITY`, `IMPORT`, `LEGACY`, `ERR` (one entry per `ErrorCode`), `DIAG`. Existing keys that mention web concepts
+(`Labels.Table.ShowingCount(int shown, int total)`) implemented with the Arabic formatter. **Native-only labels** (login lockout, recovery, wizard, backup, restore, integrity, lock screen, change password, update messages, error codes of 03 §9)
+go in `labels.native.ar.json` with the same generator; groups to add: `LOCK`, `PWD`, `RECOVERY`, `WIZARD`, `BACKUP`, `RESTORE`, `INTEGRITY`, `ERR` (one entry per `ErrorCode`), `DIAG`. Existing keys that mention web concepts
 (`AUTH.email`, `AUTH.orgCode*`, `USERS.createNote`, `ERROR_BOUNDARY` update-available state, `COMMON.offlineBanner`, `PLATFORM.*`) are not generated. **No Arabic string literal may appear outside the two JSON files** (analyzer check in CI).
 
 ---
@@ -199,8 +196,7 @@ go in `labels.native.ar.json` with the same generator; groups to add: `LOCK`, `P
 
 ```
 db\shabana.db  (+ shabana.db-wal, shabana.db-shm while open)
-backups\auto\  backups\manual\  backups\pre-migration\  backups\pre-restore\  backups\pre-import\   (default backup root; user may move it, 9.3)
-import\        staging databases and swap journal for the legacy import (05)
+Backups\auto\  Backups\manual\  Backups\pre-migration\  Backups\pre-restore\   (default backup root `C:\ProgramData\ShabanaInventory\Backups`; changeable in Settings, 9.2)
 restore\       staging/journal for restore
 logs\          shabana-YYYYMMDD.log (14 days)
 exports\       default target for CSV/PDF exports
@@ -208,7 +204,7 @@ config\machine.json   { backupRoot, offsiteRoot, backupKeyDpapi, firstInstalledV
 ```
 
 Why ProgramData, not LocalAppData: shop PCs have several Windows accounts (counter, owner, "admin"); `%LocalAppData%` is per account and would give each account its **own empty database**. The old edition also used ProgramData
-for the same reason, and an ASCII path avoids Arabic Windows user names in paths. Why not the old folder `C:\ProgramData\Shabana\`: it holds the old edition's PostgreSQL data, config and backups that the import and the retirement step must keep intact (05); a new
+for the same reason, and an ASCII path avoids Arabic Windows user names in paths. Why not the old folder `C:\ProgramData\Shabana\`: it holds the old edition's PostgreSQL data, config and backups, which the installer never touches or reads (no import, L-24); a new
 sibling name cannot collide. Why not `Program Files`: not writable by standard users.
 
 ACL: the installer creates the tree and grants `BUILTIN\Users:(OI)(CI)Modify` on it (Inno `[Dirs] Permissions: users-modify`). Consequence, stated plainly: the database is **not encrypted** and any Windows account on the PC can read the file; in-app roles protect against
@@ -238,12 +234,12 @@ The DB file is opened only by the app. Anti-virus scanners and Windows backup ca
 ### 5.5 Single instance
 
 Named mutex `Global\ShabanaInventory.SingleInstance` (also used as Inno `AppMutex` so the installer waits for / closes the app). `Global\` so a second Windows session (fast user switching) cannot open the same database concurrently
-and run a second backup scheduler; that user sees «البرنامج مفتوح في جلسة مستخدم آخر على هذا الجهاز». Same-session second launch signals the first through a named `EventWaitHandle` to restore/focus its window.
+and run a second start-up backup; that user sees «البرنامج مفتوح في جلسة مستخدم آخر على هذا الجهاز». Same-session second launch signals the first through a named `EventWaitHandle` to restore/focus its window.
 
 ### 5.6 Concurrency and LAN (decision D10)
 
-v1 supports exactly one running instance on one PC. The old edition let other devices on the shop Wi-Fi reach the server PC through Caddy (01 §4); **that capability is dropped** and flagged to the owner (open question Q1). It is not emulated by
-sharing the `.db` file over SMB (corruption risk — forbidden). If LAN is later required, the design hook is already in place: all UI code talks to `I*Service` interfaces, so a second implementation (`HttpServiceClient`) plus a host mode (a Windows service or the main app running Kestrel on the same
+v1 supports exactly one running instance on one PC. The old edition let other devices on the shop Wi-Fi reach the server PC through Caddy (01 §4); **that capability is dropped, confirmed by the owner: one PC only** (L-14). It is not emulated by
+sharing the `.db` file over SMB (corruption risk — forbidden). Should the owner ever ask for LAN, the design hook is already in place: all UI code talks to `I*Service` interfaces, so a second implementation (`HttpServiceClient`) plus a host mode (a Windows service or the main app running Kestrel on the same
 `Core` services, token auth over the existing `users`/`user_sessions` tables, TLS with a locally generated certificate) can be added without touching view-models. That is a separate phase after 1.0 (listed in `00-README.md`).
 Within one instance: the write gate + `BEGIN IMMEDIATE` serialise writers, which is also what makes the read-modify-write recipes (opening stock R8, opening balances R9/R10) race-free (03 §6 row 10).
 
@@ -257,7 +253,7 @@ Schema: `users`, `user_sessions`, `auth_events`, `user_permissions`, `user_sites
 
 Fields: `AUTH.username`, `AUTH.password` (no business code, no email: 02 §4.1 differences). Single failure message `AUTH.invalidCredentials`. Business name (from `business_settings`, readable pre-login) shown under the app name; this is the only pre-login data access (`BusinessSettingsService.GetPublicName()`, marked `[Anonymous]`).
 Steps in `AuthService.Login` (one `BEGIN IMMEDIATE` transaction): lowercase+trim username → load user → **always run a hash verification** (against a constant dummy hash when the user is unknown, to avoid timing/user enumeration) → refuse if `active = 0` (new label «الحساب موقوف، راجع المدير»; fixes DIV-8), `locked_until > now`, or `password_hash IS NULL` outside the wizard →
-on success: reset `failed_attempts`, set `last_login_at`, insert `user_sessions` (random 32-byte token held in memory; only `sha256(token)` stored; absolute expiry 12 h), `auth_events('login_ok')`; **if the stored hash is bcrypt or a weaker Argon2 parameter set → rehash with the current Argon2id parameters in the same transaction**; on failure: `failed_attempts+1`, 5th consecutive failure sets `locked_until = now + 15 min`, `auth_events('login_failed'/'locked')`.
+on success: reset `failed_attempts`, set `last_login_at`, insert `user_sessions` (random 32-byte token held in memory; only `sha256(token)` stored; absolute expiry 12 h), `auth_events('login_ok')`; **if the stored hash uses weaker parameters than the current ones (PBKDF2 fallback or lower Argon2 cost) → rehash with the current Argon2id parameters in the same transaction**; on failure: `failed_attempts+1`, 5th consecutive failure sets `locked_until = now + 15 min`, `auth_events('login_failed'/'locked')`.
 Lockout is per account; there is no IP concept on a desktop app. Time source for lockout is the app clock; changing the Windows clock backwards is a known limitation (documented, low risk on a local single-user PC).
 
 ### 6.2 Password policy and change
@@ -279,10 +275,10 @@ New passwords: >= 8 characters, not equal to the username, not a single repeated
 
 Two paths, **no master password, no vendor reset, nothing the vendor can compute**:
 
-1. **Recovery key (primary).** Generated in the first-run wizard (or at the first admin login after a legacy import, where it is mandatory before the app can be used): 160 random bits from `RandomNumberGenerator`, shown as 32 Base32 characters in groups of 4 (`ABCD-EFGH-…`), displayed **once**, with *Print* and *Save to file…* buttons and a confirmation step (retype the last group). Stored only as an Argon2id hash in `app_meta` (`recovery_key_hash`, `recovery_key_created_at`).
+1. **Recovery key (primary).** Generated in the first-run wizard (mandatory before the app can be used): 160 random bits from `RandomNumberGenerator`, shown as 32 Base32 characters in groups of 4 (`ABCD-EFGH-…`), displayed **once**, with *Print* and *Save to file…* buttons and a confirmation step (retype the last group). Stored only as an Argon2id hash in `app_meta` (`recovery_key_hash`, `recovery_key_created_at`).
    Use: login screen → «نسيت كلمة المرور؟» → enter key → choose which **admin** account → set a new password → the key is **rotated** (a new key is shown and must be printed) → `auth_events('password_reset', detail 'recovery_key')` + audit entry. Attempts are rate-limited (5 failures → 15 min, doubling, state in `app_meta`).
    The printed sheet is generated by the app («ورقة الاسترداد»: business name, date, the key, and — if backup encryption is enabled — the backup key, section 9.3) and should be kept in the shop's safe.
-2. **Windows-administrator reset (secondary; on by default, owner can switch it off in Settings, and is told so in the wizard).** The reason it exists: the old edition's `reset-admin.ps1` served exactly this purpose, and the database file is readable by any Windows administrator anyway, so this path adds **no** new exposure — it is the same trust boundary expressed through a UI. Flow: «نسيت كلمة المرور؟ → استخدام حساب ويندوز مسؤول» → the app relaunches itself elevated (UAC) → verifies the process is in the local Administrators group → asks the person to type the business name and a confirmation phrase → resets the chosen admin to a typed temporary password with `must_change_password = 1`. It writes `auth_events('password_reset', detail 'windows_admin:<DOMAIN\user>')` and an audit row, and **every admin sees a banner at next login** («تمت إعادة تعيين كلمة مرور المدير من ويندوز بتاريخ …»).
+2. **Windows-administrator reset (secondary; **enabled**, owner-confirmed L-18; the owner can still switch it off in Settings and is told so in the wizard).** The reason it exists: the old edition's `reset-admin.ps1` served exactly this purpose, and the database file is readable by any Windows administrator anyway, so this path adds **no** new exposure — it is the same trust boundary expressed through a UI. Flow: «نسيت كلمة المرور؟ → استخدام حساب ويندوز مسؤول» → the app relaunches itself elevated (UAC) → verifies the process is in the local Administrators group → asks the person to type the business name and a confirmation phrase → resets the chosen admin to a typed temporary password with `must_change_password = 1`. It writes `auth_events('password_reset', detail 'windows_admin:<DOMAIN\user>')` and an audit row, and **every admin sees a banner at next login** («تمت إعادة تعيين كلمة مرور المدير من ويندوز بتاريخ …»).
    With SQLCipher (future) this path would be removed.
 3. If both are unavailable the only route is **restore a backup** (9.2) that predates the lost password; nothing else exists, by design.
 
@@ -417,7 +413,7 @@ Dapper `TypeHandler`s map `Money`/`Qty`/`Bp`/`DateOnly`(business date)/`Instant`
 | `access.ts` | `AccessService` | `ListKeys`, `GetUserAccess(userId)`, `GetRolePreset(role)` (reads `role_presets`), `SaveAccess(userId, name, role, active, allSites, siteIds, keys)` (RPC `admin_set_user_access`, recipe R13: one tx, replace-all, all rules of 02 §4.3) | `users.manage` + role rules |
 | `admin.ts` | `UserService`, `SiteService` | `UserService.List`, `Directory`, `Create` (`pc_create_user`, all 4 roles, Argon2id, preset seeded by trigger), **NEW** `ResetPassword`, `Deactivate/Activate` (through `SaveAccess`); `SiteService.ListAll`, `ListVisible`, `Create`, `Update` (name/active) | `users.manage`, `sites.manage` |
 | `attachments.ts` | `AttachmentService` | `List(orderType, orderId)`, `Add(orderType, orderId, file)` (metadata + `attachment_blobs` in one tx; image compression is done by `App.ImageCompressor` before the call: long edge <= 2000 px, JPEG q 0.82, only if smaller; PDF/images <= 10 MB; mime allow-list), `Read(path)` (incremental blob read), `Remove(id)` | `attachments.manage` / view keys |
-| `audit.ts` | `AuditService` | `List(from, to, entity?, action?, limit 500)` + `Describe(row)` (sentence generator, 02 §10; understands the `_legacy` row shape written by the import, 05 §6) | `audit.view` |
+| `audit.ts` | `AuditService` | `List(from, to, entity?, action?, limit 500)` + `Describe(row)` (sentence generator, 02 §10) | `audit.view` |
 | `cash.ts` | `CashService` | `Balance(siteId?, asOfDate?)` (view / C1), `DrawerBalances()`, `Movements(range, siteId?)` (+ running balance when one branch), `ManualMovement(site, kind: deposit/withdraw/adjust, amount, reason)` | `cash.view`, `cash.manual` |
 | `contactOpening.ts` | `ContactOpeningService` | `GetOutstanding(contactId)`, `Set(contactId, kind, amount, asOf, note)` (R9, admin), `Settle(contactId, kind, amount, method, siteId, note)` (R10), `ListEntries(contactId)` (now used by the statement) | admin / `payments.record` (fixes DIV-10) |
 | `contacts.ts` | `ContactService` | `List(search?, type?)` (one set-based query on `v_contact_balance`, fixes DIV-32), `Get(id)`, `Create`, `Update` (diff-based update of phones and payment methods keeping row ids, fixes DIV-18), `Balance(id)` (`v_contact_balance`), `Ledger(id, from?, to?)` (section 13 DIV-17), `Statement(id, from, to)` | `contacts.view` / `contacts.manage` |
@@ -436,7 +432,6 @@ Dapper `TypeHandler`s map `Money`/`Qty`/`Bp`/`DateOnly`(business date)/`Instant`
 | (no web file) | `AuthService` **NEW** | `NeedsSetup`, `Login`, `Logout`, `ChangeOwnPassword`, `Unlock`, `RecoverWithKey`, `RecoverAsWindowsAdmin`, `RotateRecoveryKey` | anonymous / signed-in |
 | (no web file) | `SetupService` **NEW** | `CompleteFirstRun(request)` — one transaction (replaces `pc_first_run_bootstrap`) | first-run only |
 | (no web file) | `MaintenanceService` **NEW** | `BackupNow`, `ListBackups`, `Restore`, `RunIntegrity`, `RunFullIntegrity`, `ExportAll`, `Diagnostics`, `SaveBackupSettings` (section 9) | admin role (`[GuardAdminRole]`; no new permission key is introduced for maintenance) |
-| (no web file) | `LegacyImportService` **NEW** | `Detect`, `Plan`, `Run`, `Verify`, `Commit`, `Retire` (05) | first-run or empty DB + admin |
 | (client side in web) | `SearchService` | `Query(text)` over four groups, 5 hits each, Arabic-normalised AND-of-terms (02 §6), built from the same cached lists | per group's view key |
 | (print in web) | `PrintService` (App) | builds document models from the services above; no SQL | — |
 
@@ -454,7 +449,7 @@ Implementation follows 03 §9 verbatim (R1-R13), with the corrections of section
 
 ### 8.1 Mechanism
 
-- Scripts: `Shabana.Data/Migrations/Scripts/NNNN_<name>.sql`, **embedded resources**, strictly increasing, immutable once released. `0001_baseline.sql` = `native-conversion/sqlite/schema.sql` (tables, indexes, reference data, triggers, views). The marker `-- >>> PHASE 1 ENDS HERE` stays in the file: `BaselineSplitter` exposes Phase 1 (tables + reference data) and Phase 2 (triggers + views) so the importer can bulk-load history with the triggers absent (03 §11).
+- Scripts: `Shabana.Data/Migrations/Scripts/NNNN_<name>.sql`, **embedded resources**, strictly increasing, immutable once released. `0001_baseline.sql` = `native-conversion/sqlite/schema.sql` (tables, indexes, reference data, triggers, views). The marker `-- >>> PHASE 1 ENDS HERE` stays in the file: `BaselineSplitter` exposes Phase 1 (tables + reference data) and Phase 2 (triggers + views) for salvage and repair (9.4); there is no data import (L-24).
 - Version: `PRAGMA user_version` is authoritative (`schema.sql` already sets 1); `app_meta.schema_version` mirrors it and is written by the same script. A unit test pins the SHA-256 of every released script (`migration-checksums.json`): a changed released script fails CI.
 - Reference data that changes between versions (new `permission_keys`, `role_presets`) is added by a migration, never by app code.
 
@@ -480,14 +475,15 @@ Additive changes (new table/column/index/trigger/permission key) are plain state
 
 `app_meta`: `created_by_app_version`, `last_opened_by_app_version`, `last_migrated_from`. The Diagnostics report prints them.
 
-### 8.6 Schema amendments S-1 and S-2 (APPLIED in `sqlite/schema.sql`; carried unchanged into the embedded `0001_baseline.sql`, which is still unreleased)
+### 8.6 Schema amendment S-2 (APPLIED in `sqlite/schema.sql`; carried unchanged into the embedded `0001_baseline.sql`, which is still unreleased)
+
+Amendment S-1 (accept bcrypt hashes in `users.password_hash`) was **reverted**: there is no import (L-24), so the CHECK accepts only `$argon2id$*` and `$pbkdf2-sha256$*`; `smoke-test.sql` proves a garbage hash and a bcrypt hash are refused and an argon2id hash is accepted.
 
 | ID | Amendment | Reason | Status |
 |---|---|---|---|
-| S-1 | `users.password_hash` CHECK additionally accepts `GLOB '$2[aby]$*'` (bcrypt, verify-only; the hasher never **creates** one) | Keep imported users' passwords (05 §7). Without it the importer must null every hash (03 §11 step 3 said so) and every user needs a reset | **Applied** in `schema.sql`; smoke-tested |
 | S-2 | `trg_payment_apply` (and the service-written cash rows in R1/R3 that belong to a payment) set `cash_movements.created_at = paid_at` of the payment | Single date basis for dashboards and the drawer (fixes DIV-27); service rejects future `paid_at`. In `schema.sql` the trigger-written row (`trg_payment_apply`) is dated this way; the compensating row of `trg_payment_delete_apply` keeps the deletion time (a reversal happens when it is posted). Service-written R1/R3 excess/advance rows must pass `paid_at` as `created_at` themselves | **Applied** (trigger part) in `schema.sql`; smoke-tested |
 
-Everything else in section 13 is service logic or queries; no further DDL change is required. The build agent copies `schema.sql` as it stands (S-1/S-2 included) into `0001_baseline.sql`. After release, any change is a numbered migration.
+Also in `schema.sql` (decision L-22): the `manager` role preset has no `purchases.edit` (PO editing is admin only); smoke-tested. Everything else in section 13 is service logic or queries; no further DDL change is required. The build agent copies `schema.sql` as it stands into `0001_baseline.sql`. After release, any change is a numbered migration.
 
 ---
 
@@ -496,23 +492,23 @@ Everything else in section 13 is service logic or queries; no further DDL change
 ### 9.1 First-run wizard (replaces `FirstRunSetup`, `pc_first_run_bootstrap`, `provision.ps1` prompts)
 
 Shown when `first_run_completed = 0`. Nothing is written until the last step; closing the window midway leaves a blank database and the wizard starts over. Steps (Arabic, one page each, back/next):
-1. **Welcome.** If the legacy PC edition is detected: choice *استيراد بياناتي من النسخة القديمة* (recommended) / *بدء جديد* (05 §3).
+1. **Welcome.** Always a fresh start: there is no import (L-24).
 2. **Business:** name (required), address, phone, currency (EGP default, 12 options), timezone (Africa/Cairo default, 18 options).
 3. **First branch:** name (default «الفرع الرئيسي»). (More branches later in Settings.)
 4. **Administrator:** full name, username (`^[a-z0-9._-]+$`), password + confirm (policy 6.2).
 5. **Recovery sheet:** shows the recovery key (6.4); print / save; retype the last group to continue; explains the Windows-administrator option and lets the owner turn it off.
-6. **Backups:** choose the backup folder (default `backups\` with a red notice «هذا المجلد على نفس قرص البيانات؛ اختر قرصًا خارجيًا»; the wizard detects "same physical volume" and external/removable volumes and suggests them), schedule time (default 21:00 + on exit), retention (default daily 14, weekly 8, monthly 12), optional encryption (9.3).
+6. **Backups:** choose the backup folder (default `C:\ProgramData\ShabanaInventory\Backups` with an amber notice «هذا المجلد على نفس قرص البيانات؛ يُنصح بنسخة إضافية على قرص خارجي»; the wizard detects "same physical volume" and external/removable volumes and suggests them; changeable later in Settings), schedule fixed: one automatic backup per day at the first launch of the day (no time to choose), retention (default daily 14, weekly 8, monthly 12), optional encryption (9.3).
 7. **Finish:** summary; one transaction runs `seed.sql` content + wizard values + admin Argon2id hash + `recovery_key_hash` + `first_run_completed = 1`; first backup («بعد الإعداد») is taken; auto sign-in as the admin; tips card: "set opening stock / opening cash / opening balances" with buttons (02 §8.5, 8.9, 8.10).
 
 ### 9.2 Backup, restore, auto-backup (Settings → «النسخ الاحتياطي والبيانات»)
 
-*Backup file.* `.shbk` = ZIP containing `shabana.db` (online-backup copy, no WAL needed) and `manifest.json` (`appVersion`, `schemaVersion`, `createdAtUtc`, `reason` auto/manual/pre-migration/pre-restore/pre-import/on-exit, `sha256` of the db, row counts of key tables, `businessName`). Optional encryption: `.shbke` = AES-256-GCM (built in), key from the **backup key** (section 9.3). Every backup is verified right after creation (open + `integrity_check` + count comparison); an unverified backup is deleted and reported as a failure.
+*Backup file.* `.shbk` = ZIP containing `shabana.db` (online-backup copy, no WAL needed) and `manifest.json` (`appVersion`, `schemaVersion`, `createdAtUtc`, `reason` auto/manual/pre-migration/pre-restore, `sha256` of the db, row counts of key tables, `businessName`). Optional encryption: `.shbke` = AES-256-GCM (built in), key from the **backup key** (section 9.3). Every backup is verified right after creation (open + `integrity_check` + count comparison); an unverified backup is deleted and reported as a failure.
 
-*UI.* A status card (last successful backup, next scheduled, destination, free space) — the dashboard badge from the old edition is kept: «آخر نسخة احتياطية: …», amber when the last attempt failed or the last success is older than 2 days. Buttons: **نسخ احتياطي الآن**, **استعادة**, **نسخة إلى مكان آخر…**, **تغيير مجلد النسخ**. A list of backups (date, size, reason, schema version, ✓ verified).
+*UI.* A status card (last successful backup, whether today's backup is done, destination, free space) — the dashboard badge from the old edition is kept: «آخر نسخة احتياطية: …», amber when the last attempt failed or the last success is older than 2 days. Buttons: **نسخ احتياطي الآن**, **استعادة**, **نسخة إلى مكان آخر…**, **تغيير مجلد النسخ** (default `C:\ProgramData\ShabanaInventory\Backups`). A list of backups (date, size, reason, schema version, ✓ verified).
 
-*Scheduler.* `BackupScheduler : BackgroundService` ticks every minute while the app runs: if enabled and now >= today's scheduled time and no successful auto-backup since that time → run; **catch-up at start-up** when the PC was off at the scheduled time; **backup on exit** when data changed since the last backup (`PRAGMA data_version` / newest `audit_log` row) and the last backup is older than 1 hour. Honest limitation (documented in the UI): backups run only while the app is open or at its next start; the wizard default (21:00 + on exit) fits shops whose PC is switched off at night. (A headless scheduled-task mode is listed as post-1.0 in `00-README.md`.)
+*Schedule (decision L-17).* **Once per day, at app start:** on the first launch of each business day (NodaTime business-zone calendar date, 02 §3) and **before the user works**, `BackupService` runs right after the database is opened, migrated and `quick_check`ed and before the login screen accepts a password (a short Arabic progress card «جارٍ أخذ نسخة احتياطية…», typically a few seconds; the decision is `StartupBackupPolicy`: enabled AND no successful `auto` backup dated today). If that backup fails the app still starts, shows the amber badge and retries at the next launch the same day. There is **no timer and no backup on exit**; a kept-open app does not back up again until its next launch on a later day (the manual button is always available). Kept: the **pre-migration** backup (taken by `MigrationRunner` before any upgrade, section 8.2), the **manual backup button**, and retention. Honest limitation (documented in the UI): a day on which the app is never opened gets no backup. (A headless scheduled-task mode is listed as post-1.0 in `00-README.md`.)
 
-*Retention.* Per root: keep all of the last 14 daily, then one per week for 8 weeks, then one per month for 12 months (configurable); `pre-migration`/`pre-restore`/`pre-import`: keep the latest 5 and anything younger than 90 days; **never delete the newest verified backup and never prune while the latest backup attempt failed**.
+*Retention.* Per root: keep all of the last 14 daily, then one per week for 8 weeks, then one per month for 12 months (configurable); `pre-migration`/`pre-restore`: keep the latest 5 and anything younger than 90 days; **never delete the newest verified backup and never prune while the latest backup attempt failed**.
 
 *Restore.* Pick a listed backup or **«اختيار ملف نسخة…»** (USB). Steps in `RestoreService`, all automatic: validate manifest + hash + `integrity_check` of the candidate in a temp location → show what will be replaced («هذه النسخة بتاريخ … وستفقد الحركات بعد ذلك التاريخ») and require the admin to type a confirmation word → take a **pre-restore backup** of the current database → write the swap journal `restore\swap.json` → close all connections → move candidate into place with `File.Replace`, delete stale `-wal/-shm` → reopen → `MigrationRunner` (a backup from an older version is upgraded; one from a newer app is refused) → `quick_check` → clear journal → force sign-in (users come from the restored data). If any step fails the pre-restore copy is swapped back automatically. A crash mid-swap is finished or rolled back at the next start from the journal (start-up step 4).
 
@@ -520,7 +516,7 @@ Shown when `first_run_completed = 0`. Nothing is written until the last step; cl
 
 ### 9.3 Backup encryption key
 
-Enabled by a checkbox. App generates a random 256-bit key, shows it once as Base32 groups on the printable recovery sheet, and stores it protected with **DPAPI, `LocalMachine` scope** (so the scheduler works for any Windows account) inside `config\machine.json`. Restoring an encrypted backup on another PC asks for the key typed from the sheet. Backups made by the old edition (AES-256-CBC + HMAC, "SHBNAES1") are PostgreSQL dumps and are handled by the import's last-resort path (05 §3 mode D), not by Restore.
+Enabled by a checkbox. App generates a random 256-bit key, shows it once as Base32 groups on the printable recovery sheet, and stores it protected with **DPAPI, `LocalMachine` scope** (so the start-up backup works for any Windows account) inside `config\machine.json`. Restoring an encrypted backup on another PC asks for the key typed from the sheet. Backups made by the old edition (AES-256-CBC + HMAC, "SHBNAES1") are PostgreSQL dumps and cannot be restored by this app (no import, L-24).
 
 ### 9.4 Integrity check and repair (Settings → «فحص سلامة البيانات»)
 
@@ -547,7 +543,7 @@ No internet is assumed. An update is a new installer file delivered by USB/Whats
 
 ### 9.9 Business settings that live in `app_meta` (so backups carry them)
 
-`idle_lock_minutes`, `backup.enabled`, `backup.time`, `backup.retention.*`, `backup.on_exit`, `backup.encrypt`, `windows_admin_recovery_enabled`, `recovery_key_hash`, `recovery_key_created_at`, `recovery_fail_count`, `recovery_locked_until`, `last_backup_*`, `last_quick_check_*`, `imported_from` (05). Machine-specific paths (`backupRoot`, `offsiteRoot`, DPAPI key) live in `config\machine.json` and are not restored from backups.
+`idle_lock_minutes`, `backup.enabled` (daily-at-start), `backup.retention.*`, `backup.encrypt`, `windows_admin_recovery_enabled`, `recovery_key_hash`, `recovery_key_created_at`, `recovery_fail_count`, `recovery_locked_until`, `last_backup_*`, `last_quick_check_*`. Machine-specific paths (`backupRoot` (default `C:\ProgramData\ShabanaInventory\Backups`), `offsiteRoot`, DPAPI key) live in `config\machine.json` and are not restored from backups.
 
 ---
 
@@ -571,22 +567,21 @@ MSIX needs the package signed by a certificate the PC trusts (sideloading fricti
 
 ### 11.2 What the installer does (no scripts for the user; one UAC prompt)
 
-`PrivilegesRequired=admin`, `ArchitecturesAllowed=x64compatible`, `MinVersion=10.0.17763`, `AppMutex=Global\ShabanaInventory.SingleInstance` (closes/waits for the running app), `CloseApplications=yes`, new `AppId` GUID (never the old `{B6E9B6C1-…}`).
+`PrivilegesRequired=admin`, `ArchitecturesAllowed=x64compatible`, `ArchitecturesInstallIn64BitMode=x64compatible` (64-bit Windows only; a 32-bit Windows is refused with an Arabic message), `MinVersion=10.0.17763`, publish RID `win-x64` (L-29), `AppMutex=Global\ShabanaInventory.SingleInstance` (closes/waits for the running app), `CloseApplications=yes`, new `AppId` GUID (never the old `{B6E9B6C1-…}`).
 Installs to `{autopf}\Shabana Inventory` (ASCII, spaces are fine now: no PowerShell/NSSM argument problem remains); creates `C:\ProgramData\ShabanaInventory\` tree with `users-modify`; shortcuts «مخزون شبانه» on Desktop and Start menu; offers *launch now*. **No database, service, port, scheduled task or script is installed.** Uninstall removes program files only and asks (default **No**) whether to also delete the data folder, with a warning that backups would go too; the data is otherwise kept (same policy as the old edition).
 
-### 11.3 Upgrading over the old PC edition (Inno `[Code]`; safe and non-destructive)
+### 11.3 Old PC edition (Postgres-based): offer to uninstall it, carry nothing over
 
-Detection (any one): uninstall registry key `{B6E9B6C1-6B7B-4C9F-9C1A-5D3A6A2E9F11}_is1` (HKLM, 32/64-bit views), service `ShabanaPostgres`, or file `C:\ProgramData\Shabana\config\db-password.key`. If found, a page (Arabic) explains in three lines what will happen and that **no data is deleted**, then:
-1. Best-effort **disable the public link** if it was ever enabled: run the old `installer\scripts\setup-tunnel.ps1 -Disable` when it exists (it removes the Tailscale Funnel exposure; the installer is already elevated).
-2. Stop **and disable** (`sc config … start= disabled`) `ShabanaCaddy`, `ShabanaGoTrue`, `ShabanaPostgREST` in that order (frees port 8000; the old web app can no longer be opened, which prevents two editions being edited in parallel). **Leave `ShabanaPostgres` running** and untouched so the import (05) can read it without elevation.
-3. Do **not** run the old uninstaller (it deletes `bin\` including the PostgreSQL binaries the import may need) and do **not** touch `C:\ProgramData\Shabana\`.
-4. Remove the old desktop/start-menu shortcuts (their target would be dead). Remember the detection in the registry value `HKLM\Software\ShabanaInventory\LegacyDetected=1` so the app offers import even if the data folder was moved.
-5. Component *legacy import kit* (unchecked by default, **auto-ticked when the old data folder exists but `bin\pg\bin\postgres.exe` does not**): the PostgreSQL 18.x server binaries (the same major as the old install), about 35-45 MB, placed under `{app}\legacy-kit\`, used only by import mode D/C (05 §3).
-The final retirement of the old edition (stop/delete its services, run its own silent uninstaller `unins000.exe /VERYSILENT`, which keeps `data\`, `backups\`, `config\`) is performed **by the app after a verified import**, with one UAC prompt (05 §11).
+**No data is imported or carried over** (fresh install, L-24). Detection (any one): uninstall registry key `{B6E9B6C1-6B7B-4C9F-9C1A-5D3A6A2E9F11}_is1` (HKLM, 32/64-bit views), service `ShabanaPostgres`, or file `C:\ProgramData\Shabana\config\db-password.key`. If found, an Arabic page says plainly: *«تم العثور على النسخة القديمة من البرنامج. لن يتم نقل أي بيانات منها إلى النسخة الجديدة. يمكنك إزالة النسخة القديمة الآن بأمان.»* with a checkbox **«إزالة النسخة القديمة»** (ticked by default). If ticked, in this order (the installer is already elevated):
+1. Best-effort **disable the public link**: run the old `installer\scripts\setup-tunnel.ps1 -Disable` when it exists (removes the Tailscale Funnel exposure).
+2. **Stop and remove its services**: `ShabanaCaddy`, `ShabanaGoTrue`, `ShabanaPostgREST`, then `ShabanaPostgres` (stop, wait, `sc delete`), so port 8000 and the Postgres process are freed.
+3. Run the old edition's own silent uninstaller (`unins000.exe /VERYSILENT`). Per its design this removes the program files and shortcuts and **keeps** `C:\ProgramData\Shabana\` (`data\`, `backups\`, `config\`), which the installer never reads, copies, imports or deletes; the page says the old folder is left on disk and may be deleted by the owner whenever he wishes.
+4. Remove leftover old desktop/start-menu shortcuts.
+If unticked, nothing of the old edition is touched (the new app uses no ports or services, so the two cannot conflict). Failure of any step is logged and shown in Arabic; the new installation continues. No registry flag, no import kit, no PostgreSQL binaries are shipped.
 
-### 11.4 Code signing
+### 11.4 Code signing (decision L-13)
 
-Sign `Shabana.App.exe` and the installer exe (signing the other DLLs is not required). Authenticode with SHA-256 and RFC-3161 timestamp (`signtool sign /fd sha256 /tr <tsa> /td sha256`), invoked by Inno's `SignTool=` and by a CI step for the app exe before packaging. Options for the owner: an OV/EV code-signing certificate from a CA (SmartScreen reputation builds with downloads; EV gives immediate reputation but its key lives on a hardware token and cannot sit in GitHub runners), or Microsoft's cloud signing service if the owner's country/business type is eligible (eligibility has changed over time: verify when buying). CI pattern: secrets `SIGN_PFX_BASE64` + `SIGN_PFX_PASSWORD` for an OV file certificate, or a self-hosted runner/remote-signing step for a token. **Unsigned builds still work** (SmartScreen says "Unknown publisher"; the owner clicks "More info -> Run anyway"), so signing is a release gate, not a development blocker. The old plan deferred this item (BUILD_PLAN #5); start the purchase early (validation takes days).
+**The owner buys and holds the certificate** (OV file or EV token, in his name; validation takes days, so he should start early). **Builds ship unsigned until then**: SmartScreen shows "Unknown publisher" and the owner clicks "More info -> Run anyway". Signing is therefore **optional and never a release gate**: the CI signing step runs only when the secrets `SIGN_PFX_BASE64` + `SIGN_PFX_PASSWORD` exist and is **skipped silently otherwise** (no failure, a log line «unsigned build»). When a certificate exists: sign `Shabana.App.exe` and the installer exe (other DLLs are not required) with Authenticode SHA-256 and an RFC-3161 timestamp (`signtool sign /fd sha256 /tr <tsa> /td sha256`), via Inno's `SignTool=` and a CI step for the app exe before packaging. An EV token cannot sit in GitHub runners (self-hosted runner or remote signing needed); an OV file certificate fits the secrets pattern.
 
 ### 11.5 Versioning
 
@@ -598,11 +593,10 @@ Sign `Shabana.App.exe` and the installer exe (signing the other DLLs is not requ
 |---|---|---|---|
 | `test` | windows-latest | every push and PR | `actions/setup-dotnet` with `dotnet-version: 10.0.x` (same pin as `global.json`); `dotnet restore --locked-mode`; `dotnet build -warnaserror`; `dotnet test` with coverage (Core+Data+services against temp SQLite; guard-matrix; migration fixtures; golden formatting; schema smoke test executing `sqlite/smoke-test.sql` through the app's SQLite); vulnerability gate `dotnet list package --vulnerable`; label generator check; "no Arabic literal" analyzer |
 | `ui-smoke` | windows-latest | push to main/tag | publish app, run FlaUI tests: first-run wizard in a temp `--data-dir`, login, idle lock, print preview opens, backup then restore round trip |
-| `legacy-import` | ubuntu-latest (Postgres 18 service container) | nightly + on changes to `LegacyImport/` | load committed old-schema fixtures (migrations 0001-0035 + 0100/0101 + sample data incl. Arabic bcrypt passwords created by `crypt()`), run the importer headless, assert 05 §9 verification passes and bcrypt known-answer tests |
-| `package` | windows-latest | push to main, tag `v*` | `dotnet publish` (self-contained, R2R); fetch pinned PostgreSQL 18 zip for the legacy kit; compile `installer/Shabana.iss` with `ISCC.exe` (preinstalled; pin recorded); sign (if secrets exist); **installer test: silent install to a temp dir, run `Shabana.App.exe --selftest --data-dir <tmp>` (creates the DB, migrates, runs integrity, exits 0), silent upgrade over the previous release's installer using a fixture DB, silent uninstall**; upload artifact |
+| `package` | windows-latest | push to main, tag `v*` | `dotnet publish` (self-contained, R2R); compile `installer/Shabana.iss` with `ISCC.exe` (preinstalled; pin recorded); sign **only if the signing secrets exist** (otherwise skipped, unsigned build); **installer test: silent install to a temp dir, run `Shabana.App.exe --selftest --data-dir <tmp>` (creates the DB, migrates, runs integrity, exits 0), silent upgrade over the previous release's installer using a fixture DB, silent uninstall**; upload artifact |
 | `release` | windows-latest | tag `v*` | `softprops/action-gh-release` with installer + SHA-256 file (`contents: write` only for this job) |
 
-Dependabot for NuGet and Actions. Secrets are never committed. The old workflow stays untouched until cut-over (section 15, Phase 15).
+Dependabot for NuGet and Actions. Secrets are never committed. The old workflow stays untouched until cut-over (section 15, Phase 14).
 
 ---
 
@@ -614,8 +608,8 @@ Dependabot for NuGet and Actions. Secrets are never committed. The old workflow 
 4. **Formatting/validation:** golden vectors from 02 §3 (digits, money, qty, dates, search normalisation, phone, username, discount rounding).
 5. **Migrations:** N-1 fixture upgrade with fingerprint equality; forced failure (a script throwing mid-way) leaves the database untouched; backup failure aborts the upgrade.
 6. **Maintenance:** backup/restore round trip, corrupted-file detection (flip bytes in a copy), journal recovery after simulated crash at each swap step.
-7. **Import:** section 12 of 05.
-8. **UI:** FlaUI smoke (section 11.6) + a manual Windows checklist per phase on a Windows 10 VM and one **real x86-64 PC** before 1.0 (the old plan's lesson: nothing ran end to end on Windows).
+7. **Installer:** silent install / upgrade / uninstall; old-edition detection and safe removal against a simulated old install (services, registry key), no data touched.
+8. **UI:** FlaUI smoke (section 11.6) + a manual Windows checklist per phase on a Windows 10 VM and one **real 64-bit (x64) PC** before 1.0 (the old plan's lesson: nothing ran end to end on Windows).
 9. **Performance:** synthetic 3-year dataset (about 100k stock movements, 50k payments, 20k orders): list screens < 300 ms, dashboard < 500 ms, full integrity check < 10 s, backup < 5 s.
 
 ---
@@ -641,19 +635,19 @@ Sources: 02 §12 (DIV-n), 03 §7 (B1-B3 reproduced bugs, G1-G8 gaps). "Where" na
 |---|---|
 | DIV-2 | Screens and nav are gated by the **permission key** (users.manage, settings.manage, sites.manage), not the admin role; the admin preset holds them |
 | DIV-3 | `/audit` screen gated by `audit.view` only |
-| DIV-4 | **Preserved**: managers may edit POs (`purchases.edit` in the manager preset). Owner can remove the key per user; flagged in the decisions log |
+| DIV-4 | **Fixed, deliberately different from web (owner decision, L-22)**: purchase-order editing is **admin only**. `purchases.edit` is removed from the manager preset (`schema.sql` `role_presets`; `smoke-test.sql` asserts it); the admin can still grant the key to a named user. Matches the original `SCHEMA.md` intent ("admin can edit any order") |
 | DIV-5 | "تسوية" gated by `inventory.adjust`; header "نقل بين الفروع" and the row icon by `inventory.transfer`; "إضافة صنف" by `inventory.items` |
 | DIV-6 | No hard delete of sales orders, purchase orders, contacts, items, users, sites. Payments are deletable (`payments.delete`) with compensation. Draft orders are corrected by editing; there is no "cancel order" status in the schema, so a draft that is not wanted stays a draft or is emptied (documented) |
 | DIV-7 | Add-payment form gated by `payments.record` |
 | DIV-10 | Settling an opening receivable/payable allowed to `payments.record` holders; **setting** the opening figure stays admin-only |
 | DIV-12 | Integer arithmetic everywhere (7.3); no `double` |
-| DIV-13 | Dashboard gets an «حركة المخزون» table (per item: opening, in, out, closing for the chosen day and scope) so rule 10 ("both stock and cash") is satisfied; ledger query C1 with the D-1 bound. Small enhancement, flagged to the owner |
+| DIV-13 | Dashboard gets an «حركة المخزون» table (per item: opening, in, out, closing for the chosen day and scope) so rule 10 ("both stock and cash") is satisfied; ledger query C1 with the D-1 bound. Owner-accepted enhancement (L-23) |
 | DIV-14 | Dashboard shows **expenses** as their own row, plus a cash reconciliation panel built only from `cash_movements` (opening + cash in - cash out = closing, grouped by reason), which reconciles exactly; non-cash methods are labelled as not touching the drawer |
 | DIV-15 | Attachments remain on purchase orders in v1 (parity); schema supports sales orders; enabling it later is UI-only |
 | DIV-16 | Contact address and notes are shown on the contact page and on the statement header |
 | DIV-17 | One balance definition (`v_contact_balance`) feeds list, reports and page; the ledger includes vendor-advance rows and wallet applications, shows a **carried-forward row** for ranges, per-row balance with له/عليه, final balance **as of the range end**, and sorts by instant then id |
 | DIV-18 | Contact edit updates phones/payment methods in place (stable ids); a payment method referenced by any payment cannot be removed (message), so the "which account" trail is never wiped |
-| DIV-19 | Stale texts are not carried over; new labels (`USERS`, `WIZARD`); `CLAUDE.md`/`SCHEMA.md` are updated at cut-over (Phase 15) |
+| DIV-19 | Stale texts are not carried over; new labels (`USERS`, `WIZARD`); `CLAUDE.md`/`SCHEMA.md` are updated at cut-over (Phase 14) |
 | DIV-20 | `UpdateItemized` verifies new total >= already paid |
 | DIV-21 | Admin edit of a sales order that already has **cash payments** cannot change the branch (message explains: reverse the payments first); other edits unaffected |
 | DIV-22 / G1 | Deleting a `credit` payment posts a compensating wallet row (`adjustment`) in the same transaction |
@@ -736,19 +730,21 @@ Phase numbers refer to `00-README.md`. Tick a box only when the screen exists, e
 | Old feature | Decision | Justification |
 |---|---|---|
 | Single machine, no internet | **Keep** | The whole point; SQLite file, no network code at all |
-| Install path `C:\ProgramData\Shabana\` | **Change** to `C:\ProgramData\ShabanaInventory\` | Old folder holds the PostgreSQL data that the import and retirement must keep (D8, 11.3) |
+| Install path `C:\ProgramData\Shabana\` | **Change** to `C:\ProgramData\ShabanaInventory\` | Old folder holds the old PostgreSQL data, which the installer leaves untouched (D8, 11.3); fresh start, no import (L-24) |
 | First-run setup (loopback-gated) | **Keep as wizard** | No network surface any more, so no loopback gate needed (section 9.1) |
-| Nightly 03:00 backup, 14-day retention, status badge | **Keep, reworked** | In-app scheduler (default 21:00 + on exit + catch-up), GFS retention, same amber badge rule (9.2). Limitation (runs while the app is open) is disclosed in the UI |
+| Nightly 03:00 backup, 14-day retention, status badge | **Keep, reworked** | One automatic backup per day at the first app launch of the day, before the user works; default folder `C:\ProgramData\ShabanaInventory\Backups`; GFS retention; manual button; same amber badge rule (9.2, L-17). Limitation (needs the app to be opened that day) is disclosed in the UI |
 | Off-site encrypted backup (rclone, AES-CBC+HMAC) | **Keep, simplified** | Second folder (USB/share/synced folder) with optional AES-256-GCM; rclone dropped (an external tool the user would have to configure) |
 | Restore (`restore.ps1`) | **Keep as UI** | 9.2, with pre-restore safety copy and automatic rollback |
 | Admin password reset (`reset-admin.ps1`) | **Keep as recovery key + Windows-admin path** | 6.4; no script, no psql |
 | Upgrades (`migrate.ps1`, backup, auto-restore) | **Keep as `MigrationRunner`** | Section 8; single-transaction rollback + fingerprint is stronger than restore-on-failure |
 | Problem report (`export-report.ps1`) | **Keep as UI** | 9.7 |
-| Public tunnel link (Tailscale Funnel) | **DROP** | Exposes the shop's books to the internet; needs a server process; contradicts "no services/ports"; the installer **disables** a previously enabled link (11.3). If remote access is wanted it belongs to the post-1.0 host mode with proper TLS and auth |
-| LAN clients via Caddy (phones/other PCs) | **DROP in v1 (flagged, Q1)** | A desktop app with a local file cannot serve other devices safely; hook described in 5.6 |
+| Import of old data | **DROP (owner decision, L-24)** | Existing data is dummy; fresh install; installer only offers to uninstall the old edition (11.3) |
+| Invoice PDF | **Keep as image-based PDF (owner-confirmed, L-30)** | Not text-searchable; fine for WhatsApp (D6) |
+| Public tunnel link (Tailscale Funnel) | **DROP (owner-confirmed, L-14)** | Exposes the shop's books to the internet; needs a server process; contradicts "no services/ports"; the installer's old-edition removal disables a previously enabled link (11.3) |
+| LAN clients via Caddy (phones/other PCs) | **DROP (owner-confirmed: one PC only, L-14)** | A desktop app with a local file cannot serve other devices safely; design hook noted in 5.6 for a hypothetical future |
 | Own window (app mode) | **n/a** | It is a native window |
 | Backup badge `PcBackupStatus` | **Keep** | Dashboard + header indicator |
-| Attachments (PC-shim bytes in DB) | **Keep** | `attachment_blobs` in the same file and backups |
+| Attachments (PC-shim bytes in DB) | **Keep, purchase orders only (owner-confirmed, L-30)** | `attachment_blobs` in the same file and backups; no sales-order attachments |
 | Web-only features missing on PC (expenses, الملخص المالي, accountant role, opening balances, cost price, route guards) | **Keep: all included** | Native follows web migration 0044 (03 §0) |
 | Offline banner, query cache, chunk-reload, mobile bottom tabs/MoreSheet | **DROP** | Web-only |
 | Caddy, GoTrue, PostgREST, NSSM, PostgreSQL services | **DROP** | Replaced by the in-process SQLite engine |
@@ -758,18 +754,18 @@ Phase numbers refer to `00-README.md`. Tick a box only when the screen exists, e
 - [ ] **N-01** Idle auto-lock + lock screen — P4
 - [ ] **N-02** Change password / forced change / admin reset — P3/P4/P5
 - [ ] **N-03** Recovery key sheet + recovery flows — P4
-- [ ] **N-04** Backup / restore / scheduler / retention / off-site / encryption UI — P11
+- [ ] **N-04** Backup / restore / daily start-up backup / retention / off-site / encryption UI — P11
 - [ ] **N-05** Integrity check, repair, recovery screen, salvage — P11
 - [ ] **N-06** Full data export, problem report — P11
-- [ ] **N-07** Legacy import wizard + retirement of the old edition — P12
-- [ ] **N-08** Installer with upgrade-over-old and CI-tested install/upgrade/uninstall — P13
+- [ ] **N-07** Installer offers safe removal of the old edition (no data carried over) — P12
+- [ ] **N-08** Installer with CI-tested install/upgrade/uninstall, x64 only — P12
 - [ ] **N-09** Stock opening/closing panel on the dashboard (DIV-13) — P10
 
 ---
 
 ## 15. Open technical risks (carried to `00-README.md`)
 
-1. **.NET 8 end of support (D2): resolved by targeting .NET 10 LTS.** 2. **Argon2 cost on weak PCs** — measured in Phase 3, PBKDF2 fallback exists. 3. **No Windows run yet** — Phase 14 includes a real-hardware pass (the old project never ran end to end on Windows). 4. **Backups depend on the app being open** (no headless task in v1). 5. **Unencrypted DB file** readable by any Windows account. 6. **IBM Plex Sans Arabic digit glyphs in print** — verify in Phase 10. 7. **Old install state unknown** (partially removed, services stopped, bin removed) — import modes B-D cover it (05 §3), tested with fixtures only until a real old install is available; the pilot in Phase 15 is the first real test.
+1. **.NET 8 end of support (D2): resolved by targeting .NET 10 LTS.** 2. **Argon2 cost on weak PCs** — measured in Phase 3, PBKDF2 fallback exists. 3. **No Windows run yet** — Phase 13 includes a real-hardware pass (the old project never ran end to end on Windows). 4. **Backups depend on the app being opened that day** (one backup at the first launch of each day; no headless task in v1). 5. **Unencrypted DB file** readable by any Windows account. 6. **IBM Plex Sans Arabic digit glyphs in print** — verify in Phase 10. 7. **Old install state unknown** (partially removed, services stopped, bin removed) — the removal step of 11.3 is idempotent and logs-and-continues; tested against a simulated old install until a real one is available; the pilot in Phase 14 is the first real test.
 
 ---
 

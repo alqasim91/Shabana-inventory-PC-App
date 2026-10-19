@@ -56,7 +56,7 @@ Connection rules: `PRAGMA foreign_keys=ON` on **every** connection; `journal_mod
 | PostgreSQL table | SQLite table | Column / constraint changes |
 |---|---|---|
 | `sites` | `sites` | `id` uuid→TEXT (v4 default expr); `active` boolean→INTEGER 0/1 CHECK; `created_at` timestamptz→TEXT UTC; `org_id` dropped. NEW: `CHECK(trim(name_ar)<>'')`. |
-| `profiles` (+ `auth.users`) | `users` | PK `user_id`(→auth.users) becomes `id`; role enum `app_role` (4 values incl. `accountant`)→CHECK; `username` UNIQUE + format CHECK (`^[a-z0-9._-]+$`, same as `pc_create_user`); `active`,`all_sites`→INTEGER. NEW columns replacing auth.users: `email`(optional), `password_hash` (Argon2id / PBKDF2 / verify-only bcrypt, S-1), `password_changed_at`, `must_change_password`, `failed_attempts`, `locked_until`, `last_login_at`, `updated_at`. `org_id` dropped. |
+| `profiles` (+ `auth.users`) | `users` | PK `user_id`(→auth.users) becomes `id`; role enum `app_role` (4 values incl. `accountant`)→CHECK; `username` UNIQUE + format CHECK (`^[a-z0-9._-]+$`, same as `pc_create_user`); `active`,`all_sites`→INTEGER. NEW columns replacing auth.users: `email`(optional), `password_hash` (Argon2id / PBKDF2 only; no bcrypt, no import, L-24), `password_changed_at`, `must_change_password`, `failed_attempts`, `locked_until`, `last_login_at`, `updated_at`. `org_id` dropped. |
 | `contacts` | `contacts` | `type` enum→CHECK; `created_by`→FK `users`; `org_id` dropped. NEW: name non-blank CHECK. |
 | `contact_phones` | `contact_phones` | `is_primary` boolean→INTEGER; partial unique index `contact_phones_one_primary` kept (`WHERE is_primary=1`). "Primary is mandatory" is an app rule in the web schema too. |
 | `contact_payment_methods` | `contact_payment_methods` | `method` enum→CHECK of the 3 values that can satisfy `contact_pm_shape` (the enum's 4th value `credit` could never pass that constraint). Shape CHECK kept verbatim. |
@@ -409,7 +409,7 @@ Check helpers (SQL form): `can(u,k)` = `EXISTS(SELECT 1 FROM v_user_permissions 
 | Role | Permission keys |
 |---|---|
 | **admin** | all 38 (and bypass) |
-| **manager** (26) | sales.view/draft/discount/invoice/place/cancel_placement · purchases.view/create/edit/convert · inventory.view/items/adjust/transfer · payments.record/credit · cash.view · contacts.view/manage · attachments.manage · expenses.view/record/manage · dashboard.view · reports.view · audit.view |
+| **manager** (25) | sales.view/draft/discount/invoice/place/cancel_placement · purchases.view/create/convert (**no `purchases.edit`: PO editing is admin-only, deliberate fix vs web, L-22**) · inventory.view/items/adjust/transfer · payments.record/credit · cash.view · contacts.view/manage · attachments.manage · expenses.view/record/manage · dashboard.view · reports.view · audit.view |
 | **staff** (12) | sales.view/draft/discount · purchases.view · inventory.view · payments.record · cash.view · contacts.view · expenses.view/record · dashboard.view · reports.view |
 | **accountant** (1) | financials.view (aggregate RPCs only — **sees no rows at all**) |
 
@@ -456,7 +456,7 @@ Not in any preset (admin-only unless granted): `sales.edit_locked`, `sales.delet
 | items | DELETE | `items_delete` (0032) | `can(inventory.item_delete)` | ✔ | — | — | — |  |
 | purchase_orders | SELECT | `po_read` (0032) | `can(purchases.view)` | ✔ | ✔ | ✔ | — |  |
 | purchase_orders | INSERT | `po_write` (0032) | `can(purchases.create)` | ✔ | ✔ | — | — |  |
-| purchase_orders | UPDATE | `po_update` (0032) | `can(purchases.edit)` | ✔ | ✔ | — | — |  |
+| purchase_orders | UPDATE | `po_update` (0032) | `can(purchases.edit)` | ✔ | **— (native: admin only, L-22; web managers had it)** | — | — |  |
 | purchase_orders | DELETE | `po_delete` (0032) | `can(purchases.delete)` | ✔ | — | — | — |  |
 | po_lines | SELECT | `po_lines_read` (0032) | `can(purchases.view)` | ✔ | ✔ | ✔ | — |  |
 | po_conversions | SELECT | `conv_read` (0032) | `can(purchases.view) and site(site_id)` | ✔ | ✔ | ✔ | — |  |
@@ -552,7 +552,7 @@ Not in any preset (admin-only unless granted): `sales.edit_locked`, `sales.delet
 | `credit_apply`, `credit_refund`, `vendor_credit_apply`, `vendor_credit_refund` | `payments.credit` (0032) | same |
 | `settle_contact_opening` | `payments.record` | same |
 | `create_itemized_po` | `purchases.create` | same |
-| `update_itemized_po`, `admin_update_purchase_order` | `purchases.edit` | same (+ payments ≤ new total, G2) |
+| `update_itemized_po`, `admin_update_purchase_order` | `purchases.edit` (admin only in native, L-22) | same (+ payments ≤ new total, G2) |
 | `admin_update_sales_order` | `sales.edit_locked` | same |
 | `set_opening_stock`, `set_contact_opening_balance` | `is_admin()` | role = admin |
 | `admin_set_user_access` | `users.manage`; non-admins additionally: cannot create/edit admins, cannot grant permissions they lack; nobody can change own role/active or remove the last active admin | same (last two are also DB triggers) |
@@ -860,13 +860,9 @@ SELECT r.id AS rule_id, r.name_ar, r.frequency, c.name_ar AS category_name, s.na
 
 Opening of day D = closing of D−1 for **both stock and cash** (rule 10): run C1/C2 with the end-of-(D−1) bound.
 
-## 11. Migrating existing data (PostgreSQL → SQLite)
+## 11. Data migration
 
-1. Create **Phase 1** only: run `schema.sql` up to the marker `>>> PHASE 1 ENDS HERE` (tables, indexes, reference data). If you run the whole file, import with the triggers **dropped**, otherwise every historical row is posted twice.
-2. Export from PG with conversions: money `(round(x*100))::bigint`; qty `(round(q*1000))::bigint`; `timestamptz` → `to_char(t AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`; `date` → `to_char(d,'YYYY-MM-DD')`; boolean → `::int`; `jsonb` → `::text`; drop `org_id`.
-3. Load in FK order: `sites`, `users` (from `profiles`; **same UUIDs**; `auth.users` hashes are bcrypt (`$2a$/$2b$/$2y$`) and **are accepted by the CHECK since amendment S-1** (`GLOB '$2[aby]$*'`, verify-only; rehash to Argon2id on first login) → import `password_hash` as is with `must_change_password` from the source; only NULL/empty/non-bcrypt values become `password_hash = NULL, must_change_password = 1`, see 05 §7), `user_permissions`, `user_sites`, `contacts`, `contact_phones`, `contact_payment_methods`, `items`, `purchase_orders` (keep `order_code`, `order_seq`), `po_conversions`, `po_lines`, `po_line_conversions`, `sales_orders` (**do not insert** `discount_amount`/`total_amount` — generated; insert `subtotal`, `discount_type`, `discount_value_x100`), `sales_order_lines` (`line_total` generated), `payments`, `stock_movements`, `stock_transfers`, `cash_movements`, `client_credits`, `vendor_credits`, `contact_opening_balances`, `doc_counters` (`po`,`so` by year; `po_seq`/`so_seq` year 0 = max `order_seq`), `order_attachments` + `attachment_blobs` (from `pc_file_bytes`), `audit_log`, `expense_*`, `business_settings` (from `organization`).
-4. Run Phase 2 (triggers + views).
-5. **Verify before go-live** (all must be 0 differences): per `(site,item)` stock vs PG `get_stock`; per site drawer vs `get_cash_balance`; per contact `v_contact_balance` vs `get_contact_balance`; per SO `total_amount_piasters` and per line `line_total_piasters` vs PG ×100 (proves the generated columns reproduce history); row counts of every table; `PRAGMA foreign_key_check`; `PRAGMA integrity_check`.
+No import: fresh install, decided L-24 (the existing data is dummy; the owner starts with an empty database).
 
 ## 12. Self-check — catalog vs migrations
 
@@ -905,6 +901,9 @@ Runtime error near line 49: PAYMENT_OVERPAY|المبلغ يتجاوز المتب
 │ v_cash_drawer_balance = 125.00 EGP                   │ PASS   │
 │ v_contact_balance = -1000.00 (we owe vendor)         │ PASS   │
 │ audit_log captured the payments                      │ PASS   │
+│ password_hash: argon2id accepted, garbage rejected   │ PASS   │
+│ manager preset lacks purchases.edit; admin has it    │ PASS   │
+│ S-2: back-dated payment cash row created_at = paid_at │ PASS   │
 └──────────────────────────────────────────────────────┴────────┘
 ┌───────────────────┐
 │      verdict      │

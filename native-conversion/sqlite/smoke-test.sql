@@ -62,14 +62,20 @@ INSERT INTO smoke VALUES ('v_contact_balance = -1000.00 (we owe vendor)',
 INSERT INTO smoke VALUES ('audit_log captured the payments',
   (SELECT COUNT(*) FROM audit_log WHERE entity = 'payments' AND action = 'insert') = 2);
 
--- 4) AMENDMENT S-1: bcrypt hash accepted (verify-only import), garbage rejected.
+-- 4) password_hash format: argon2id accepted, garbage rejected.
 INSERT INTO users (id, username, full_name, role, password_hash, must_change_password)
-VALUES ('u-bc', 'bcrypt.user', 'bcrypt', 'staff', '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012', 0);
+VALUES ('u-ar', 'argon.user', 'argon', 'staff', '$argon2id$v=19$m=65536,t=3,p=1$c2FsdHNhbHQ$aGFzaGhhc2g', 0);
 .print >>> expecting 1 error: CHECK constraint (garbage password_hash)
 INSERT INTO users (id, username, full_name, role, password_hash, must_change_password)
 VALUES ('u-bad', 'bad.user', 'bad', 'staff', 'plaintext-garbage', 0);
-INSERT INTO smoke VALUES ('S-1: bcrypt hash accepted, garbage hash rejected',
-  (SELECT COUNT(*) FROM users WHERE id = 'u-bc') = 1 AND (SELECT COUNT(*) FROM users WHERE id = 'u-bad') = 0);
+INSERT INTO smoke VALUES ('password_hash: argon2id accepted, garbage rejected',
+  (SELECT COUNT(*) FROM users WHERE id = 'u-ar') = 1
+  AND (SELECT COUNT(*) FROM users WHERE id = 'u-bad') = 0);
+
+-- 4b) L-22: purchase-order editing is admin-only; the manager preset lacks purchases.edit.
+INSERT INTO smoke VALUES ('manager preset lacks purchases.edit; admin has it',
+  (SELECT COUNT(*) FROM role_presets WHERE role = 'manager' AND perm = 'purchases.edit') = 0
+  AND (SELECT COUNT(*) FROM role_presets WHERE role = 'admin' AND perm = 'purchases.edit') = 1);
 
 -- 5) AMENDMENT S-2: a back-dated cash payment's drawer row is dated by paid_at.
 INSERT INTO payments (id, parent_type, parent_id, amount_piasters, method, site_id, paid_at)

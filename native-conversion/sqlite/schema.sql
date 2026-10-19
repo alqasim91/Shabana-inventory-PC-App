@@ -149,13 +149,10 @@ CREATE TABLE users (
   -- Encoded password hash, self-describing, e.g.
   --   $argon2id$v=19$m=65536,t=3,p=1$<salt_b64>$<hash_b64>      (preferred)
   --   $pbkdf2-sha256$i=600000$<salt_b64>$<hash_b64>             (fallback)
-  --   $2a$ / $2b$ / $2y$ ...                                    (bcrypt: VERIFY-ONLY, imported
-  --                                       users; the app never creates one — amendment S-1)
   -- NULL only for the first-run placeholder admin (must_change_password = 1).
   password_hash        TEXT    CHECK (password_hash IS NULL
                                       OR password_hash GLOB '$argon2id$*'
-                                      OR password_hash GLOB '$pbkdf2-sha256$*'
-                                      OR password_hash GLOB '$2[aby]$*'),
+                                      OR password_hash GLOB '$pbkdf2-sha256$*'),
   password_changed_at  TEXT    CHECK (strftime('%Y-%m-%dT%H:%M:%fZ', password_changed_at) IS password_changed_at),
   must_change_password INTEGER NOT NULL DEFAULT 1 CHECK (must_change_password IN (0, 1)),
   failed_attempts      INTEGER NOT NULL DEFAULT 0 CHECK (failed_attempts >= 0),
@@ -690,10 +687,8 @@ CREATE INDEX audit_log_entity_idx     ON audit_log(entity, entity_id);
 -- ============================================================================
 -- 10. REFERENCE DATA (required for the app to function; idempotent)
 -- ============================================================================
--- >>> PHASE 1 ENDS HERE (tables, indexes, reference data). A bulk importer that
--- >>> migrates existing Postgres rows should load them NOW and only then run
--- >>> everything below (PHASE 2 = triggers + views): otherwise the ledger triggers
--- >>> would post every historical row a second time. See porting notes §11.
+-- >>> PHASE 1 ENDS HERE (tables, indexes, reference data); PHASE 2 = triggers + views.
+-- >>> There is no data import (L-24): the whole file is always applied in one go.
 INSERT OR IGNORE INTO app_meta (key, value) VALUES ('schema_version', '1');
 INSERT OR IGNORE INTO app_meta (key, value) VALUES ('first_run_completed', '0');
 
@@ -745,7 +740,8 @@ INSERT OR IGNORE INTO role_presets (role, perm) VALUES
   ('manager','expenses.manage'),('manager','expenses.record'),('manager','expenses.view'),
   ('manager','inventory.adjust'),('manager','inventory.items'),('manager','inventory.transfer'),
   ('manager','inventory.view'),('manager','payments.credit'),('manager','payments.record'),
-  ('manager','purchases.convert'),('manager','purchases.create'),('manager','purchases.edit'),
+  ('manager','purchases.convert'),('manager','purchases.create'),   -- purchases.edit is ADMIN-ONLY (L-22)
+
   ('manager','purchases.view'),('manager','reports.view'),('manager','sales.cancel_placement'),
   ('manager','sales.discount'),('manager','sales.draft'),('manager','sales.invoice'),
   ('manager','sales.place'),('manager','sales.view'),

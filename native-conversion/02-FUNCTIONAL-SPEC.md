@@ -157,7 +157,7 @@ A single "business identity" record: `business_name` (required; default «شبا
 
 ### 5.2 The 38 permission keys, presets and enforcement
 
-Legend: A admin (always everything) · M manager preset (26 keys) · S staff preset (12) · C accountant preset (1). ✔ = in preset. Labels are `PERM_LABEL` (`labels.ts:791`), area names `PERM_AREA` (`labels.ts:778`); editor groups by area ordered by `sort`.
+Legend: A admin (always everything) · M manager preset (25 keys in native; web had 26) · S staff preset (12) · C accountant preset (1). ✔ = in preset. Labels are `PERM_LABEL` (`labels.ts:791`), area names `PERM_AREA` (`labels.ts:778`); editor groups by area ordered by `sort`.
 
 | Key (area) | Arabic label | M | S | C | Enforced in the database (policy / trigger / RPC) | UI guard in the web app |
 |---|---|:-:|:-:|:-:|---|---|
@@ -172,7 +172,7 @@ Legend: A admin (always everything) · M manager preset (26 keys) · S staff pre
 | `sales.delete` | حذف أمر بيع | – | – | – | `so_delete` policy | **no UI** (service `deleteSalesOrder` exists, unused) — see [DIV-6] |
 | `purchases.view` | عرض أوامر الشراء | ✔ | ✔ | – | `po_read`, `po_lines_read`, `conv_read` (+branch), `plc_read`, attachment read, `payments_read` (PO payments) | route `/purchases*`; nav |
 | `purchases.create` | إنشاء أمر شراء | ✔ | – | – | `po_write` insert; RPC `create_itemized_po` gate | «إضافة أمر شراء» `Purchases.tsx:158` |
-| `purchases.edit` | تعديل أمر شراء | ✔ | – | – | `po_update`; RPCs `admin_update_purchase_order`, `update_itemized_po` gates | «تعديل» `PurchaseOrderDetail.tsx:116` — **managers hold it by preset** [DIV-4] |
+| `purchases.edit` | تعديل أمر شراء | **–** (admin only, L-22) | – | – | `po_update`; RPCs `admin_update_purchase_order`, `update_itemized_po` gates | «تعديل» `PurchaseOrderDetail.tsx:116` — web: managers held it by preset [DIV-4]; **native: admin only, deliberate fix (L-22)** |
 | `purchases.convert` | التحويل إلى المخزون | ✔ | – | – | `conv_write` (+branch), `plc_write` (**no branch check**) | conversion buttons `:178`, `:256` |
 | `purchases.delete` | حذف أمر شراء أو عكس تحويل | – | – | – | `po_delete`, `conv_delete` (+branch), `plc_delete` | reverse-conversion icons `:233`, `:286`; PO delete has no UI |
 | `inventory.view` | عرض الأصناف والأرصدة | ✔ | ✔ | – | `items_read`, `sm_read` (+branch), `transfer_read` (either end) | route `/inventory*`; nav |
@@ -200,8 +200,8 @@ Legend: A admin (always everything) · M manager preset (26 keys) · S staff pre
 | `sites.manage` | إدارة الفروع | – | – | – | `sites_admin_write/update/delete` | `/settings` route is admin-role only [DIV-2] |
 | `settings.manage` | تعديل بيانات المنشأة | – | – | – | `org_update` | same |
 
-Counts verified by building the migrations: admin 38 · manager 26 · staff 12 · accountant 1.
-**Manager preset = the 26 ✔ in column M** (everything except: `sales.edit_locked`, `sales.delete`, `purchases.delete`, `inventory.item_delete`, `payments.delete`, `cash.manual`, `contacts.delete`, `expenses.void`, `financials.view`, `users.manage`, `sites.manage`, `settings.manage`).
+Counts verified by building the web migrations: admin 38 · manager 26 (native: 25) · staff 12 · accountant 1.
+**Manager preset = the ✔ in column M (25 in native; web had 26 because it also held `purchases.edit`, removed by L-22)** (everything except: `sales.edit_locked`, `sales.delete`, `purchases.delete`, `inventory.item_delete`, `payments.delete`, `cash.manual`, `contacts.delete`, `expenses.void`, `financials.view`, `users.manage`, `sites.manage`, `settings.manage`).
 **Staff preset = 12:** `sales.view`, `sales.draft`, `sales.discount`, `purchases.view`, `inventory.view`, `payments.record`, `cash.view`, `contacts.view`, `expenses.view`, `expenses.record`, `dashboard.view`, `reports.view`.
 **Accountant preset = 1:** `financials.view`. Isolation is "holds nothing else": no table is readable without a key; the accountant sees aggregate totals only. A completeness fix was needed for `payments_read` (it had no key check) — `0040:535`.
 
@@ -219,7 +219,7 @@ Counts verified by building the migrations: admin 38 · manager 26 · staff 12 �
 | Delete sales order (DB-permitted, no UI) | ✔ | – | – | – | `sales.delete` |
 | View purchase orders | ✔ | ✔ | ✔ | – | `purchases.view` |
 | Create PO (general or itemized) | ✔ | ✔ | – | – | `purchases.create` |
-| Edit PO (any stage) | ✔ | ✔ | – | – | `purchases.edit` |
+| Edit PO (any stage) | ✔ | – (**admin only in native; web managers could: deliberate fix, L-22**) | – | – | `purchases.edit` |
 | Convert PO into branch stock | ✔ | ✔ | – | – | `purchases.convert` |
 | Reverse a conversion | ✔ | – | – | – | `purchases.delete` |
 | View inventory / item movements | ✔ | ✔ | ✔ | – | `inventory.view` |
@@ -448,7 +448,7 @@ Quoted Arabic strings are the exact server error messages the web UI shows verba
   - When `remaining ≤ 0.0005` the PO status becomes `fully_converted`.
 - **Reverse a conversion** (key `purchases.delete`): allowed only if the branch still holds the quantity (`stock − output_qty ≥ −0.0005`) else «لا يمكن التراجع عن التحويل: المخزون الحالي في الفرع لا يكفي»; writes `−output_qty` movement (`source_type='adjustment'`, note «إلغاء تحويل من أمر الشراء»); a `fully_converted` PO goes back to `open`. General-PO conversions and their reversals are audit-logged; itemized receipts (`po_line_conversions`) and lines (`po_lines`) have no audit trigger.
 - `total_kg` cannot be edited once any conversion exists («لا يمكن تعديل إجمالي الكيلوهات بعد بدء التحويل إلى المخزون») — except through the edit function below.
-- **Edit a PO at any stage** (key `purchases.edit`; held by managers by default [DIV-4]): `total_kg > 0`; new `total_kg ≥ converted` («إجمالي الكيلوهات (X) أقل من المحوّل بالفعل (Y)»); new `total ≥ already paid` («الإجمالي الجديد (X) أقل من المدفوع بالفعل (Y)»); sets vendor, product, notes, date, kg, price/kg, total; recomputes status (`fully_converted` iff converted ≥ total_kg − 0.0005, else `open`). The edit is **not** audited (the PO audit trigger fires only on status change) [DIV-23].
+- **Edit a PO at any stage** (key `purchases.edit`; **admin only in native**, web managers held it by default [DIV-4], deliberate fix L-22): `total_kg > 0`; new `total_kg ≥ converted` («إجمالي الكيلوهات (X) أقل من المحوّل بالفعل (Y)»); new `total ≥ already paid` («الإجمالي الجديد (X) أقل من المدفوع بالفعل (Y)»); sets vendor, product, notes, date, kg, price/kg, total; recomputes status (`fully_converted` iff converted ≥ total_kg − 0.0005, else `open`). The edit is **not** audited (the PO audit trigger fires only on status change) [DIV-23].
 - The PO's `status` value `closed` exists in the enum but nothing sets it. A fully paid, fully converted PO simply stays `fully_converted`.
 
 **Itemized PO**
@@ -679,7 +679,7 @@ Numbered for reference. "Docs" = CLAUDE.md, SCHEMA.md, build/multi-tenant plans.
 | DIV-1 | **Invoicing is broken on any DB built from the migration files.** `0032:372` calls `next_doc_number('so', y)`, a two-argument function that `0024:230` dropped; error «function next_doc_number(unknown, integer) does not exist». **[verified]** Production presumably differs from the repo. | `0024_org_schema.sql:230-243`, `0032_permissions_enforce.sql:372` | Invoice/order-code strings are never displayed; omit them or generate from the running number. |
 | DIV-2 | Nav items for users/settings use keys `users.manage` / `settings.manage`, but routes `/users` and `/settings` are `RequireRole(['admin'])`; a non-admin holding the key sees a link that bounces. `sites.manage` has no UI key at all. | `App.tsx:175`, `navConfig.tsx` | Gate screens by the key; keep admin as the preset holder. |
 | DIV-3 | `/audit` route = role admin or manager, nav = `audit.view`: a manager without the key reaches the page (empty by RLS); a staff user granted the key cannot. | `App.tsx:171` | Use the key. |
-| DIV-4 | Docs (`SCHEMA.md` 0018: "admin can edit any order"; RLS table "Edit: admin") vs code: after `0032` the manager preset holds `purchases.edit`, so **managers can edit any PO at any stage** (the RPCs were re-gated from `is_admin()` to `has_perm('purchases.edit')`). `0031`'s "nobody's access changes" claim is therefore not true for this action. Sales-order edit after invoicing (`sales.edit_locked`) remains admin only. | `0032:481-490`, `0042:390` | Decide deliberately; the spec preserves current behaviour (manager may edit POs). |
+| DIV-4 | Docs (`SCHEMA.md` 0018: "admin can edit any order"; RLS table "Edit: admin") vs code: after `0032` the manager preset holds `purchases.edit`, so **managers can edit any PO at any stage** (the RPCs were re-gated from `is_admin()` to `has_perm('purchases.edit')`). `0031`'s "nobody's access changes" claim is therefore not true for this action. Sales-order edit after invoicing (`sales.edit_locked`) remains admin only. | `0032:481-490`, `0042:390` | **Owner decision: native is admin-only** (`purchases.edit` removed from the manager preset, L-22; 04 §13). |
 | DIV-5 | UI gates "تسوية" and the header "نقل بين الفروع" on `inventory.items`, but the database needs `inventory.adjust` / `inventory.transfer`. A user with only `inventory.adjust` cannot reach the button; one with `inventory.items` but not `.adjust` sees a button that fails. | `ItemDetail.tsx:77`, `Inventory.tsx:158` | Gate each button by its own key. |
 | DIV-6 | `sales.delete`, `purchases.delete` (PO), `contacts.delete`, `inventory.item_delete` exist in the database; **no UI offers them**, and deleting a placed/closed SO **does not reverse stock, cash or payments** (payments are polymorphic, no FK) **[verified]**; deleting a PO reverses its conversions but leaves payments and cash. | `0032`, `0004:99`, `0008` | Do not implement hard deletes of financial documents; use cancel/void with compensating rows. |
 | DIV-7 | Add-payment form is not behind `payments.record` in the UI (only delete and wallet use are gated). | `PaymentsPanel.tsx:302` | Gate. |
@@ -688,9 +688,9 @@ Numbered for reference. "Docs" = CLAUDE.md, SCHEMA.md, build/multi-tenant plans.
 | DIV-10 | Settling an opening receivable/payable: database allows `payments.record`; UI hides the whole card from non-admins. | `OpeningBalanceCard.tsx:115` | Allow settlement for `payments.record` holders; keep *setting* admin-only. |
 | DIV-11 | Eight money RPCs were re-gated by `0032` (the header says twelve). `so_overpay`, `po_overpay`, `credit_deposit`, `vendor_credit_deposit` still have **no permission check** (they were meant to be "staff and up"). | `0032:481-490` (the eight-entry mapping), `0014`, `0023` | Gate with `payments.record`. |
 | DIV-12 | `CLAUDE.md`: "Money NUMERIC(12,2). Never float." The UI derives prices with JS doubles (`Math.round(x*100)/100`) for PO totals/unit prices, discount preview, and sums; the database re-rounds. | `PurchaseOrderFormModal.tsx:59-84,147-172`, `SalesOrderFormModal.tsx:63-70` | Use exact decimal everywhere. |
-| DIV-13 | Docs rule 10: "opening balance of day D = closing of D−1 for **both stock and cash**". The dashboard shows only cash opening/closing; stock appears only as the low-stock list. | `get_dashboard`, `Dashboard.tsx` | Decide whether to add stock opening/closing (the ledger supports it). |
+| DIV-13 | Docs rule 10: "opening balance of day D = closing of D−1 for **both stock and cash**". The dashboard shows only cash opening/closing; stock appears only as the low-stock list. | `get_dashboard`, `Dashboard.tsx` | **Decided:** native dashboard shows stock opening/closing per item per site (owner decision L-23). |
 | DIV-14 | Dashboard "المدفوعات للموردين" excludes expenses, although `closing_cash` includes cash expenses (they are cash rows). So opening + collections − payouts ≠ closing whenever expenses exist. `get_dashboard` was not touched by 0041-0044. | `0023:120`, `0042` | Add an expenses line. |
-| DIV-15 | Schema supports attachments on sales orders (`order_type='sale'`); no UI. | `0022`, `SalesOrderDetail.tsx` | Optional. |
+| DIV-15 | Schema supports attachments on sales orders (`order_type='sale'`); no UI. | `0022`, `SalesOrderDetail.tsx` | **Decided:** attachments on purchase orders only (owner decision L-30). |
 | DIV-16 | Contact `address` and `notes` can be saved but are displayed nowhere (not on the contact page, not on statements). | grep | Display them. |
 | DIV-17 | Contact statement/ledger defects: (a) vendor-advance wallet rows missing and their applications hidden, so a vendor with an advance has ledger balance ≠ `get_contact_balance` (the contact list/reports use the RPC, the contact page and statement use the ledger); (b) `finalBalance` is the all-history balance even when the chosen end date is in the past; (c) no "balance brought forward" line for a filtered range; (d) row balance shows an absolute value with no له/عليه; (e) mixed date/timestamp string sorting. | `services/contacts.ts:198-332`, `ContactStatement.tsx` | Single source of truth for balance; include vendor wallet; carry-forward row. |
 | DIV-18 | Editing a contact deletes and re-inserts all phones and payment methods; payments' `contact_payment_method_id` is `ON DELETE SET NULL`, so the saved-account trail on past payments is wiped by any edit. | `services/contacts.ts:103-160`, `0016` | Update in place / soft-delete methods. |
@@ -737,4 +737,4 @@ Numbered for reference. "Docs" = CLAUDE.md, SCHEMA.md, build/multi-tenant plans.
 
 **Roles in the matrix (5.2, 5.3):** admin, manager, staff, accountant — all four present, with per-key presets and the role-only checks in 5.4.
 
-**Open questions the owner should answer before building** (not decidable from code): keep manager-edits-PO (DIV-4)? hard deletes (DIV-6)? dashboard stock opening/closing (DIV-13)? how to treat `status='closed'` PO (never set)? whether LAN multi-device access remains (affects concurrency)? keep sales-order attachments (DIV-15)? business-day definition (DIV-26/27)?
+**Open questions:** all resolved by the owner; see the decisions log L-xx in `00-README.md` (DIV-4 admin-only PO edit L-22, DIV-6 reversal only L-21, DIV-13 accepted L-23, one PC only so no LAN L-14, attachments on purchase orders only L-30).
