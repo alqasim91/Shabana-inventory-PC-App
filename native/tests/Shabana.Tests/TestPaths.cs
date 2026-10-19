@@ -21,6 +21,14 @@ internal static class TestPaths
         return File.Exists(path) ? path : null;
     }
 
+    /// <summary>
+    /// Reads a repo text file with line endings normalised to LF. Git on Windows (core.autocrlf=true) checks text files
+    /// out with CRLF, which breaks line-anchored regexes ('$' only matches before '\n') and text comparisons.
+    /// </summary>
+    public static string ReadText(string path) => NormalizeEol(File.ReadAllText(path));
+
+    public static string NormalizeEol(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n');
+
     public static string Fixture(string name) => Path.Combine(AppContext.BaseDirectory, "Fixtures", name);
 
     private static string FindUp(string marker)

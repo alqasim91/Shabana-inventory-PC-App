@@ -61,6 +61,33 @@ public class ErrorCodeTests
         Labels.Err.ByKey.Keys.Order().ShouldBe(Enum.GetValues<ErrorCode>().Select(c => c.Code()).Order());
     }
 
+    /// <summary>Parses the "Error codes raised by the schema" table of 03-DB-PORTING-NOTES.md (CRLF or LF input).</summary>
+    internal static Dictionary<string, string> ParseErrorTable(string markdown)
+    {
+        var text = TestPaths.NormalizeEol(markdown);
+        var section = text.Split("**Error codes raised by the schema**")[1].Split("**Recipes**")[0];
+        return Regex.Matches(section, @"^\| `([A-Z0-9_]+)` \| (.+) \|$", RegexOptions.Multiline)
+            .ToDictionary(m => m.Groups[1].Value, m => m.Groups[2].Value);
+    }
+
+    [Fact]
+    public void ParseErrorTable_gives_the_same_rows_for_CRLF_and_LF_text()
+    {
+        const string lf = "intro\n**Error codes raised by the schema**\n\n| Code | Message |\n|---|---|\n| `A_B` | first |\n| `C_D` | second \"x\" |\n\n**Recipes**\n| `Z` | ignored |\n";
+        var viaLf = ParseErrorTable(lf);
+        viaLf.Count.ShouldBe(2);
+        ParseErrorTable(lf.Replace("\n", "\r\n")).ShouldBe(viaLf);
+        ParseErrorTable(lf.Replace("\n", "\r")).ShouldBe(viaLf);
+
+        // the real document, forced to CRLF, as a Windows checkout with core.autocrlf=true would have it
+        var doc = TestPaths.NativeConversion("03-DB-PORTING-NOTES.md");
+        if (doc is not null)
+        {
+            var real = File.ReadAllText(doc);
+            ParseErrorTable(TestPaths.NormalizeEol(real).Replace("\n", "\r\n")).ShouldBe(ParseErrorTable(real));
+        }
+    }
+
     [Fact]
     public void Enum_matches_the_table_of_03_section_9_text_for_text()
     {
@@ -70,10 +97,7 @@ public class ErrorCodeTests
             return; // docs not shipped next to the sources (the other tests still pin the enum)
         }
 
-        var text = File.ReadAllText(doc);
-        var section = text.Split("**Error codes raised by the schema**")[1].Split("**Recipes**")[0];
-        var rows = Regex.Matches(section, @"^\| `([A-Z0-9_]+)` \| (.+) \|$", RegexOptions.Multiline)
-            .ToDictionary(m => m.Groups[1].Value, m => m.Groups[2].Value);
+        var rows = ParseErrorTable(File.ReadAllText(doc));
         rows.Count.ShouldBe(34);
         foreach (var code in Enum.GetValues<ErrorCode>())
         {
@@ -85,7 +109,7 @@ public class ErrorCodeTests
     [Fact]
     public void Enum_matches_the_codes_the_baseline_schema_actually_raises()
     {
-        var sql = File.ReadAllText(Path.Combine(TestPaths.NativeDir, "src", "Shabana.Data", "Migrations", "Scripts", "0001_baseline.sql"));
+        var sql = TestPaths.ReadText(Path.Combine(TestPaths.NativeDir, "src", "Shabana.Data", "Migrations", "Scripts", "0001_baseline.sql"));
         var raised = Regex.Matches(sql, @"RAISE\(ABORT,\s*'([A-Z0-9_]+)\|")
             .Select(m => m.Groups[1].Value).Distinct().Order().ToList();
         raised.Count.ShouldBe(34);

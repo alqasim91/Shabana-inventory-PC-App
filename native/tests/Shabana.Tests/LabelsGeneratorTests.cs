@@ -164,7 +164,7 @@ public class LabelsGeneratorTests
     // ---- The real Core/Resources/labels.ar.json, through the real generated Labels class ----
 
     private static JsonDocument RealJson() =>
-        JsonDocument.Parse(File.ReadAllText(Path.Combine(TestPaths.NativeDir, "src", "Shabana.Core", "Resources", "labels.ar.json")));
+        JsonDocument.Parse(TestPaths.ReadText(Path.Combine(TestPaths.NativeDir, "src", "Shabana.Core", "Resources", "labels.ar.json")));
 
     private static IEnumerable<Type> GroupClasses() =>
         typeof(Labels).GetNestedTypes(BindingFlags.Public).Where(t => t.GetField("ByKey") is not null);
@@ -199,7 +199,7 @@ public class LabelsGeneratorTests
         }
 
         // + the groups of labels.native.ar.json (ERR, MONTH, CURRENCY_*, ...), which are generated into the same Labels class
-        using var native = JsonDocument.Parse(File.ReadAllText(Path.Combine(TestPaths.NativeDir, "src", "Shabana.Core", "Resources", "labels.native.ar.json")));
+        using var native = JsonDocument.Parse(TestPaths.ReadText(Path.Combine(TestPaths.NativeDir, "src", "Shabana.Core", "Resources", "labels.native.ar.json")));
         GroupClasses().Count().ShouldBe(groups + native.RootElement.EnumerateObject().Count());
         strings.ShouldBeGreaterThan(1000);
         Labels.AppName.ShouldBe(doc.RootElement.GetProperty("APP_NAME").GetString());

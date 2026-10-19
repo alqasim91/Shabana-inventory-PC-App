@@ -186,7 +186,7 @@ public class ArabicLiteralAnalyzerTests
     [Fact]
     public void Shipping_projects_attach_the_analyzer()
     {
-        var props = File.ReadAllText(Path.Combine(TestPaths.NativeDir, "src", "Directory.Build.props"));
+        var props = TestPaths.ReadText(Path.Combine(TestPaths.NativeDir, "src", "Directory.Build.props"));
         props.ShouldContain("Shabana.Analyzers.csproj");
         props.ShouldContain("OutputItemType=\"Analyzer\"");
         props.ShouldContain("**/*.xaml");
@@ -200,7 +200,7 @@ public class ArabicLiteralAnalyzerTests
             .Where(f => f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".xaml", StringComparison.Ordinal))
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
             .Where(f => !f.EndsWith(".g.cs", StringComparison.Ordinal))
-            .Where(f => NoArabicLiteralAnalyzer.ContainsArabic(File.ReadAllText(f)))
+            .Where(f => NoArabicLiteralAnalyzer.ContainsArabic(TestPaths.ReadText(f)))
             .Select(f => Path.GetRelativePath(src, f))
             .ToList();
         offenders.ShouldBeEmpty();

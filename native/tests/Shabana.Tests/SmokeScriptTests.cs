@@ -14,7 +14,7 @@ public class SmokeScriptTests
     public void Smoke_test_script_passes_every_check_and_raises_exactly_the_announced_errors()
     {
         using var db = SqlScript.CreateBaselineDatabase();
-        var steps = SqlScript.Parse(File.ReadAllText(TestPaths.Fixture("smoke-test.sql")));
+        var steps = SqlScript.Parse(TestPaths.ReadText(TestPaths.Fixture("smoke-test.sql")));
 
         var pending = 0;
         var announced = 0;
@@ -70,7 +70,19 @@ public class SmokeScriptTests
             return;
         }
 
-        File.ReadAllText(TestPaths.Fixture("smoke-test.sql")).ShouldBe(File.ReadAllText(source));
+        TestPaths.ReadText(TestPaths.Fixture("smoke-test.sql")).ShouldBe(TestPaths.ReadText(source));
+    }
+
+    [Fact]
+    public void Parser_gives_identical_steps_for_CRLF_and_LF_scripts()
+    {
+        const string lf = ".mode list\n-- a comment\nCREATE TABLE t(a TEXT);\n.print >>> expecting 1 error\nINSERT INTO t VALUES ('x;\ny');\n.read other.sql\nSELECT 1\n";
+        var expected = SqlScript.Parse(lf);
+        expected.ShouldNotBeEmpty();
+        SqlScript.Parse(lf.Replace("\n", "\r\n")).ShouldBe(expected);
+
+        var fixture = TestPaths.ReadText(TestPaths.Fixture("smoke-test.sql"));
+        SqlScript.Parse(fixture.Replace("\n", "\r\n")).ShouldBe(SqlScript.Parse(fixture));
     }
 
     [Fact]

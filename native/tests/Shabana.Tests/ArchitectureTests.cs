@@ -62,7 +62,7 @@ public class ArchitectureTests
     [Fact]
     public void Solution_lists_exactly_these_projects()
     {
-        var sln = File.ReadAllText(Path.Combine(TestPaths.NativeDir, "Shabana.sln"));
+        var sln = TestPaths.ReadText(Path.Combine(TestPaths.NativeDir, "Shabana.sln"));
         foreach (var name in AllowedProjectReferences.Keys)
         {
             sln.ShouldContain($"\"{name}\"", Case.Sensitive);

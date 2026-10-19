@@ -42,6 +42,7 @@ internal static class SqlScript
     /// </summary>
     public static List<Step> Parse(string script)
     {
+        script = TestPaths.NormalizeEol(script);
         var steps = new List<Step>();
         var sb = new StringBuilder();
         var i = 0;

@@ -22,7 +22,7 @@ public class BaselineSchemaTests
             return; // the docs folder was removed after the cut-over; the checksum test (P2) takes over
         }
 
-        EmbeddedSql.Baseline().ShouldBe(File.ReadAllText(source));
+        EmbeddedSql.Baseline().ShouldBe(TestPaths.ReadText(source));
     }
 
     [Fact]
@@ -101,6 +101,6 @@ public class BaselineSchemaTests
             return;
         }
 
-        EmbeddedSql.Seed().ShouldBe(File.ReadAllText(source));
+        EmbeddedSql.Seed().ShouldBe(TestPaths.ReadText(source));
     }
 }

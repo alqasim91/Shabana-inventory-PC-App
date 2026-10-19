@@ -36,6 +36,7 @@ public static class EmbeddedSql
         using var stream = typeof(EmbeddedSql).Assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException($"Embedded resource '{resourceName}' was not found.");
         using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        return reader.ReadToEnd();
+        // Normalise to LF: a CRLF checkout (git core.autocrlf=true on Windows) must yield the same script text.
+        return reader.ReadToEnd().Replace("\r\n", "\n");
     }
 }

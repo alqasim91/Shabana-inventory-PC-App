@@ -1,0 +1,37 @@
+# Pin line endings so Windows checkouts (core.autocrlf=true) stay byte-identical to Linux ones.
+# Tests parse docs/SQL/JSON line by line and compare embedded resources with source files.
+* text=auto eol=lf
+
+*.sql    text eol=lf
+*.md     text eol=lf
+*.json   text eol=lf
+*.cs     text eol=lf
+*.xaml   text eol=lf
+*.csproj text eol=lf
+*.props  text eol=lf
+*.targets text eol=lf
+*.sln    text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.mjs    text eol=lf
+*.js     text eol=lf
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.css    text eol=lf
+*.html   text eol=lf
+# Shortcut file is committed with CRLF; leave it exactly as is
+*.url    -text
+
+# binaries
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.zip    binary
+*.nupkg  binary
+*.snk    binary
+*.pfx    binary

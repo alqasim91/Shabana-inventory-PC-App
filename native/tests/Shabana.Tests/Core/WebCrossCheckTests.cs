@@ -13,7 +13,7 @@ namespace Shabana.Tests.Core;
 /// </summary>
 public class WebCrossCheckTests
 {
-    private static readonly JsonElement Vectors = JsonDocument.Parse(File.ReadAllText(TestPaths.Fixture("web-crosscheck.json"))).RootElement;
+    private static readonly JsonElement Vectors = JsonDocument.Parse(TestPaths.ReadText(TestPaths.Fixture("web-crosscheck.json"))).RootElement;
 
     private static IEnumerable<JsonElement> Rows(string name) => Vectors.GetProperty(name).EnumerateArray();
 
