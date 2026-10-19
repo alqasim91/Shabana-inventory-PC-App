@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- SQLite access, migrations (embedded scripts), security primitives, maintenance. References Core, never the App. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Shabana.Data</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Dapper" />
+    <ProjectReference Include="../Shabana.Core/Shabana.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 0001_baseline.sql is native-conversion/sqlite/schema.sql, byte for byte (04 section 8.1; a test pins it).
+         Numbered scripts are immutable once released; reference data (seed.sql) is executed by SetupService in P3. -->
+    <EmbeddedResource Include="Migrations/Scripts/*.sql" LogicalName="Shabana.Data.Migrations.Scripts.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Migrations/Reference/*.sql" LogicalName="Shabana.Data.Migrations.Reference.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

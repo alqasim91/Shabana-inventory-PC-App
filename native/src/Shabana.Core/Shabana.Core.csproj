@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Business rules + services. Knows nothing about WPF or SQLite (enforced by ArchitectureTests). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Shabana.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Labels: the JSON files are the single source of every Arabic string; Labels.g.cs is generated at build. -->
+    <AdditionalFiles Include="Resources/labels.ar.json" />
+    <AdditionalFiles Include="Resources/labels.native.ar.json" />
+    <ProjectReference Include="../../tools/LabelsGen/Shabana.LabelsGen.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

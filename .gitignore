@@ -24,3 +24,13 @@ installer/Output/
 **/config/Caddyfile
 **/config/gotrue.env
 **/config/postgrest.conf
+
+# --- Native Windows edition (native/) ---
+# Build output only. packages.lock.json files ARE committed (restored with --locked-mode in CI).
+native/**/bin/
+native/**/obj/
+native/**/TestResults/
+native/**/.vs/
+native/**/*.user
+native/**/*.trx
+native/vulnerable.txt

@@ -1,0 +1,76 @@
+name: Native CI
+
+# Phase P0 of the native Windows rewrite (native-conversion/00-README.md). Everything lives under native/.
+# The legacy workflow build-installer.yml is untouched; this one only runs when native/** (or this file) changes.
+# 04-NATIVE-ARCHITECTURE.md section 11.6 job "test": restore --locked-mode, build -warnaserror, test, vulnerability gate.
+
+on:
+  push:
+    paths:
+      - "native/**"
+      - ".github/workflows/native-ci.yml"
+  pull_request:
+    paths:
+      - "native/**"
+      - ".github/workflows/native-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: native
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Show SDK
+        run: dotnet --info
+
+      # Fails if any packages.lock.json is out of date with the project files / Directory.Packages.props.
+      - name: Restore (locked)
+        run: dotnet restore --locked-mode
+
+      - name: Build (warnings are errors)
+        run: dotnet build --no-restore -warnaserror --configuration Release
+
+      - name: Test
+        run: dotnet test --no-build --configuration Release --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage" --results-directory TestResults
+
+      # `dotnet list package --vulnerable` exits 0 even when it finds something, so the output is inspected.
+      # It also fails when the vulnerability source could not be read (an unchecked package is not a clean one).
+      - name: Vulnerable-package gate
+        shell: bash
+        run: |
+          dotnet list Shabana.sln package --vulnerable --include-transitive 2>&1 | tee vulnerable.txt
+          if grep -qiE "has the following vulnerable packages|Unable to load the service index|error:|NU1900" vulnerable.txt; then
+            echo "::error::Vulnerable (or unverifiable) packages found - see the output above."
+            exit 1
+          fi
+          grep -qi "no vulnerable packages" vulnerable.txt || { echo "::error::Unexpected output from dotnet list package."; exit 1; }
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-test-results
+          path: native/TestResults
+          if-no-files-found: ignore

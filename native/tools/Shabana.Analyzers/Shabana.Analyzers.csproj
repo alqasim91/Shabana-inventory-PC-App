@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Roslyn analyzer SHB0001: "no Arabic literal outside the labels JSON files" (04 section 4.7).
+       Referenced by every shipping project (Core, Data, App) as an analyzer, and by the tests directly. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Shabana.Analyzers</RootNamespace>
+    <!-- Analyzer release tracking (RS2008) is for published analyzer packages; this one is internal. -->
+    <NoWarn>$(NoWarn);RS2008</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- WPF shell. Windows only, x64 only (decision L-29): the runtime identifier is applied at publish time
+       (dotnet publish -r win-x64), not here, so restore/lock files are identical on every OS. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Shabana.App</RootNamespace>
+    <Platforms>AnyCPU</Platforms>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <ProjectReference Include="../Shabana.Core/Shabana.Core.csproj" />
+    <ProjectReference Include="../Shabana.Data/Shabana.Data.csproj" />
+  </ItemGroup>
+</Project>

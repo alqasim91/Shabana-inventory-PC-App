@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Core + Data + generator + analyzer + architecture tests. net10.0 only (no WPF runtime needed), so they run on
+       Linux and Windows. The WPF App is verified by compilation here and by the FlaUI project from phase P4. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Shabana.Tests</RootNamespace>
+    <!-- xunit analyzers: keep them, they are cheap and catch real mistakes. -->
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Shabana.Core/Shabana.Core.csproj" />
+    <ProjectReference Include="../../src/Shabana.Data/Shabana.Data.csproj" />
+    <ProjectReference Include="../../tools/LabelsGen/Shabana.LabelsGen.csproj" />
+    <ProjectReference Include="../../tools/Shabana.Analyzers/Shabana.Analyzers.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

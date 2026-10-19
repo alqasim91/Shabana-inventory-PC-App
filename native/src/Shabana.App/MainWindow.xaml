@@ -1,0 +1,19 @@
+<Window x:Class="Shabana.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:res="clr-namespace:Shabana.Core.Resources;assembly=Shabana.Core"
+        xmlns:vm="clr-namespace:Shabana.App.ViewModels"
+        xml:lang="ar-EG"
+        FlowDirection="RightToLeft"
+        Title="{x:Static res:Labels.AppName}"
+        Width="1100" Height="700"
+        WindowStartupLocation="CenterScreen">
+  <Window.DataContext>
+    <vm:MainViewModel />
+  </Window.DataContext>
+  <Grid>
+    <TextBlock Text="{Binding Heading}"
+               HorizontalAlignment="Center" VerticalAlignment="Center"
+               FontSize="28" />
+  </Grid>
+</Window>

@@ -1,0 +1,12 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!-- Every shipping project (src/*) gets the "no Arabic literal" analyzer (SHB0001, error severity).
+       Tests are deliberately exempt: golden vectors in tests legitimately contain Arabic text. -->
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tools/Shabana.Analyzers/Shabana.Analyzers.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <!-- XAML is not C#: hand it to the analyzer as an additional file so Arabic in .xaml is caught too. -->
+    <AdditionalFiles Include="**/*.xaml" Exclude="bin/**;obj/**" />
+  </ItemGroup>
+</Project>
