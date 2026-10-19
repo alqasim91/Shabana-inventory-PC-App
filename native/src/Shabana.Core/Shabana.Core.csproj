@@ -5,6 +5,10 @@
     <RootNamespace>Shabana.Core</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Time zones: embedded tzdb, so Cairo DST rules are right on every PC (04 section 2). -->
+    <PackageReference Include="NodaTime" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Labels: the JSON files are the single source of every Arabic string; Labels.g.cs is generated at build. -->
     <AdditionalFiles Include="Resources/labels.ar.json" />
     <AdditionalFiles Include="Resources/labels.native.ar.json" />

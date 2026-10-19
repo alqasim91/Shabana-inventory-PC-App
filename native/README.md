@@ -1,6 +1,6 @@
 # Shabana Inventory - native Windows edition (`native/`)
 
-.NET 10 LTS, WPF (RTL, ar-EG), SQLite (Dapper + Microsoft.Data.Sqlite), x64 only. Specs: `../native-conversion/` (`00-README.md` = decisions and phase plan, `04-NATIVE-ARCHITECTURE.md` = how it is built). This folder is **phase P0 (Foundations)**: the skeleton, the build gates and the data baseline; no features yet.
+.NET 10 LTS, WPF (RTL, ar-EG), SQLite (Dapper + Microsoft.Data.Sqlite), x64 only. Specs: `../native-conversion/` (`00-README.md` = decisions and phase plan, `04-NATIVE-ARCHITECTURE.md` = how it is built). This folder holds **P0 (Foundations)**: the skeleton, the build gates and the data baseline, and **P1 (Core primitives)**: the pure domain building blocks below; no screens yet.
 
 ## Build and test
 
@@ -43,3 +43,17 @@ Analyzer `SHB0001` (error) rejects Arabic in string/char literals (also via esca
 ## Database baseline
 
 `0001_baseline.sql` is `native-conversion/sqlite/schema.sql` byte for byte (a test pins it). Expected catalog: 36 tables, 13 views, 108 triggers, 61 explicit indexes (SQLite also keeps 33 automatic `sqlite_autoindex_*`). `smoke-test.sql` runs against the embedded script. The minimum SQLite engine is 3.38 (`SqliteRuntime.MinimumVersion`).
+
+## Core primitives (P1, `Shabana.Core`)
+
+```
+Numerics/    Money (piasters), Qty (milli), Bp (basis points), MoneyMath (Int128, round half away from zero), PoPricing (bidirectional PO pricing + recency), Limits
+Formatting/  ArabicNumber (fixed digit/separator tables), MoneyFormat, QtyFormat, PercentFormat, ArabicDate, OrderNumber, Currencies, NumberInput (text -> scaled integer)
+Text/        SearchNormalizer (port of web lib/search.ts), PhoneEg (port of lib/phone.ts)
+Auth/        Username, PasswordPolicy
+Sales/       DiscountRules
+Time/        IClock, BusinessCalendar (NodaTime tzdb, Africa/Cairo day bounds), BusinessZones, InstantText
+Errors/      ErrorCode (the 34 codes of 03 section 9, equal to the codes the baseline schema raises), ErrorCodes (code <-> enum <-> Arabic message)
+```
+No `double`/`decimal` in Core arithmetic. Code points of Arabic characters are written numerically in code (SHB0001); the Arabic text (error messages, month names, currency symbols/names, time-zone names, password messages) is in `labels.native.ar.json` (groups `ERR`, `ERR_GENERIC`, `PWD`, `MONTH`, `CURRENCY_SYMBOL`, `CURRENCY_NAME`, `TIMEZONE_NAME`).
+`tests/Shabana.Tests/Fixtures/web-crosscheck.json` holds outputs of the web app's real functions (search, phone, digits, dates, formatMoney/formatQty) for the cross-check tests; `gen-web-crosscheck.mjs` regenerates it (`node --experimental-strip-types`, Node 22 with full ICU).

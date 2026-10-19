@@ -198,7 +198,9 @@ public class LabelsGeneratorTests
             strings += expected.Count;
         }
 
-        GroupClasses().Count().ShouldBe(groups);
+        // + the groups of labels.native.ar.json (ERR, MONTH, CURRENCY_*, ...), which are generated into the same Labels class
+        using var native = JsonDocument.Parse(File.ReadAllText(Path.Combine(TestPaths.NativeDir, "src", "Shabana.Core", "Resources", "labels.native.ar.json")));
+        GroupClasses().Count().ShouldBe(groups + native.RootElement.EnumerateObject().Count());
         strings.ShouldBeGreaterThan(1000);
         Labels.AppName.ShouldBe(doc.RootElement.GetProperty("APP_NAME").GetString());
         Labels.OrgName.ShouldBe(doc.RootElement.GetProperty("ORG_NAME").GetString());

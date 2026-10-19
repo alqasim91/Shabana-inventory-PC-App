@@ -11,6 +11,7 @@
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <PackageVersion Include="Dapper" Version="2.1.89" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageVersion Include="NodaTime" Version="3.3.5" />
     <!-- Build-time tooling (Roslyn components target netstandard2.0; 4.14 loads in every SDK >= 9) -->
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
