@@ -1,6 +1,6 @@
 # Shabana Inventory - native Windows edition (`native/`)
 
-.NET 10 LTS, WPF (RTL, ar-EG), SQLite (Dapper + Microsoft.Data.Sqlite), x64 only. Specs: `../native-conversion/` (`00-README.md` = decisions and phase plan, `04-NATIVE-ARCHITECTURE.md` = how it is built). This folder holds **P0 (Foundations)**: the skeleton, the build gates and the data baseline, and **P1 (Core primitives)**: the pure domain building blocks below; no screens yet.
+.NET 10 LTS, WPF (RTL, ar-EG), SQLite (Dapper + Microsoft.Data.Sqlite), x64 only. Specs: `../native-conversion/` (`00-README.md` = decisions and phase plan, `04-NATIVE-ARCHITECTURE.md` = how it is built). This folder holds **P0 (Foundations)**: the skeleton, the build gates and the data baseline, **P1 (Core primitives)**: the pure domain building blocks, and **P2 (Data layer and migrations)**: connections, transactions, migrations, backup, restore and integrity; no screens yet.
 
 ## Build and test
 
@@ -57,3 +57,28 @@ Errors/      ErrorCode (the 34 codes of 03 section 9, equal to the codes the bas
 ```
 No `double`/`decimal` in Core arithmetic. Code points of Arabic characters are written numerically in code (SHB0001); the Arabic text (error messages, month names, currency symbols/names, time-zone names, password messages) is in `labels.native.ar.json` (groups `ERR`, `ERR_GENERIC`, `PWD`, `MONTH`, `CURRENCY_SYMBOL`, `CURRENCY_NAME`, `TIMEZONE_NAME`).
 `tests/Shabana.Tests/Fixtures/web-crosscheck.json` holds outputs of the web app's real functions (search, phone, digits, dates, formatMoney/formatQty) for the cross-check tests; `gen-web-crosscheck.mjs` regenerates it (`node --experimental-strip-types`, Node 22 with full ICU).
+
+## Data layer (P2, `Shabana.Data`; no WPF)
+
+```
+DataLocations                       C:\ProgramData\ShabanaInventory layout (db\, Backups\, restore\, ...), root injectable for tests
+Sqlite/ConnectionFactory            the only place a connection is made; 04 section 5.2 pragmas on EVERY open; Open / OpenExisting / OpenUnpooled / OpenForInspection
+Sqlite/UnitOfWork (IUnitOfWork)     RunAsync = gate + BEGIN IMMEDIATE + app_context actor + COMMIT/ROLLBACK; ReadAsync = one snapshot, query_only
+Sqlite/SqliteErrorMapper            RAISE(ABORT,'CODE|..') -> Core DomainException(ErrorCode); other failures classified (DbErrorKind), never mistaken for a rule
+Migrations/MigrationRunner          inspect -> verified pre-migration backup -> ONE transaction (FK off, scripts statement by statement, FK check, integrity check, version mirror, balance fingerprint) -> commit
+Migrations/BaselineSplitter         phase 1 (tables, indexes, reference data) / phase 2 (triggers, views) + an idempotent phase 2 for repair
+Backup/BackupService + Verifier     .shbk = ZIP(shabana.db from the online backup API, manifest.json); verified twice; final name only after verification
+Backup/RestoreService               verify -> pre-restore backup -> checkpoint -> journal (restore\swap.json) -> swap -> validate -> commit; RecoverPendingSwap at start-up
+Maintenance/LedgerInvariants        the 14 ledger invariants as SQL (the stress-test oracle AND the owner's integrity check)
+Maintenance/DatabaseFingerprint     SHA-256 of schema / data / balances: how migrations and restores are proved
+```
+
+Rules that are easy to get wrong (each has a test):
+- **Timeouts.** Microsoft.Data.Sqlite retries a locked command for `Default Timeout` seconds (30 by default, **0 = forever**) whatever `PRAGMA busy_timeout` says, so `ConnectionFactory` puts its 5 s there.
+- **Multi-statement text.** `SqliteCommand.ExecuteNonQuery` silently stops at the first statement that returns rows. Migration scripts are therefore split (`SqlStatementSplitter`) and run one statement per command; a script may not `BEGIN`/`COMMIT`/`VACUUM`/`ATTACH`.
+- **Table rebuilds in a migration** (03 section 6 row 9): the runner turns `foreign_keys` OFF; the script must run `PRAGMA legacy_alter_table = ON` for its own duration (the runner resets it after each script), otherwise `ALTER TABLE .. RENAME` fails on triggers that mention the dropped table. See `tests/.../TestMigrations.cs` (`V3Rebuild`).
+- **Pooling.** A pooled connection keeps the file open after `Dispose()`. Code that moves, replaces or deletes a database file calls `ConnectionFactory.ReleaseFileHandles()` first; migration, backup and restore use unpooled connections.
+- **Restore never deletes the old database before the new one is committed.** The old file set (`.db`, `-wal`, `-shm`, `-journal`) is renamed to `shabana.db.restore-previous*`; the journal says which side a crash recovers to (before commit: old; after: new).
+- A migration is immutable once released: `tests/Shabana.Tests/Fixtures/migration-checksums.json` pins the SHA-256 (LF-normalised) of every script.
+
+Test suites for P2 live in `tests/Shabana.Tests/Data/`. The 65-assertion schema suite and the 6,000-operation x 4-seed stress run are **re-created** (the scripts of 03 section 0 are not in the repository); `SHABANA_STRESS_OPS=500` shortens the stress run for a quick local loop (default and CI: the full 6,000).
